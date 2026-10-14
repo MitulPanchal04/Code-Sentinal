@@ -75,6 +75,18 @@ class Review(Base):
     pr_number_commit_sha = Column(String(300), nullable=False)
     commit_sha = Column(String(40), nullable=False)
     status = Column(String(20), nullable=False, default="pending")
+    # Pull request metadata — populated by the install/sync path so that
+    # PRs that were never reviewed still show up in the dashboard.
+    pr_state = Column(String(20), nullable=True)
+    pr_title = Column(Text, default="")
+    pr_url = Column(String(500), default="")
+    author = Column(String(255), default="")
+    head_branch = Column(String(255), default="")
+    base_branch = Column(String(255), default="")
+    github_pr_id = Column(BigInteger, nullable=True)
+    repo_id = Column(BigInteger, nullable=True)
+    pr_created_at = Column(DateTime, nullable=True)
+    pr_updated_at = Column(DateTime, nullable=True)
     findings = Column(JSONB, default=list)
     summary = Column(Text, default="")
     diagram = Column(Text, default="")

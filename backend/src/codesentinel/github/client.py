@@ -38,6 +38,42 @@ class GitHubClient:
             resp.raise_for_status()
             return resp
 
+    async def list_accessible_repositories(self) -> list[dict[str, Any]]:
+        """List all repositories accessible to this installation (paginated)."""
+        repos: list[dict[str, Any]] = []
+        page = 1
+        while True:
+            resp = await self._request(
+                "GET",
+                "https://api.github.com/installation/repositories",
+                params={"per_page": 100, "page": page},
+            )
+            batch = resp.json().get("repositories", [])
+            repos.extend(batch)
+            if len(batch) < 100:
+                break
+            page += 1
+        return repos
+
+    async def list_open_pull_requests(
+        self, owner: str, repo: str
+    ) -> list[dict[str, Any]]:
+        """List all open pull requests for a repository (paginated)."""
+        prs: list[dict[str, Any]] = []
+        page = 1
+        while True:
+            resp = await self._request(
+                "GET",
+                f"https://api.github.com/repos/{owner}/{repo}/pulls",
+                params={"state": "open", "per_page": 100, "page": page},
+            )
+            batch = resp.json()
+            prs.extend(batch)
+            if len(batch) < 100:
+                break
+            page += 1
+        return prs
+
     async def get_pr(
         self, owner: str, repo: str, pr_number: int
     ) -> dict[str, Any]:

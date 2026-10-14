@@ -3,8 +3,8 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
-import { formatDate, scoreColor } from "@/lib/utils";
-import { Loader2, RefreshCw, AlertTriangle } from "lucide-react";
+import { formatDate, scoreColor, reviewStatusBadge, reviewStatusLabel, prStateBadge } from "@/lib/utils";
+import { Loader2, RefreshCw, AlertTriangle, GitPullRequest } from "lucide-react";
 import { useSearchParams, useRouter } from "next/navigation";
 
 export default function ReviewsPage() {
@@ -15,6 +15,8 @@ export default function ReviewsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const statusFilter = searchParams.get("status") || "";
   const repoFilter = searchParams.get("repo") || "";
 
@@ -50,6 +52,32 @@ export default function ReviewsPage() {
     router.push(`/dashboard/reviews?${params.toString()}`);
   };
 
+  const handleSync = async () => {
+    setSyncing(true);
+    setSyncMessage(null);
+    setError(null);
+    try {
+      const data = await api.listInstallations();
+      const ids = [
+        ...new Set((data.installations || []).map((i) => i.installation_id)),
+      ];
+      if (ids.length === 0) {
+        setSyncMessage("No connected repositories to sync.");
+        return;
+      }
+      await Promise.all(ids.map((id) => api.syncInstallation(id)));
+      setSyncMessage(
+        "Sync queued — open PRs will appear here shortly. Hit Refresh to update."
+      );
+      setTimeout(() => fetchData(true), 5000);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(`Sync failed: ${msg}`);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -61,8 +89,16 @@ export default function ReviewsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold">All Reviews ({total})</h2>
+        <h2 className="text-xl font-semibold">Pull Requests &amp; Reviews ({total})</h2>
         <div className="flex gap-2">
+          <button
+            onClick={handleSync}
+            disabled={syncing}
+            className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent disabled:opacity-50"
+          >
+            <GitPullRequest className={`h-4 w-4 ${syncing ? "animate-pulse" : ""}`} />
+            {syncing ? "Syncing…" : "Sync PRs"}
+          </button>
           <button
             onClick={() => fetchData(true)}
             disabled={refreshing}
@@ -77,9 +113,10 @@ export default function ReviewsPage() {
             onChange={(e) => handleStatusChange(e.target.value)}
           >
             <option value="">All statuses</option>
+            <option value="not_reviewed">Not reviewed</option>
+            <option value="pending">In progress</option>
             <option value="complete">Complete</option>
             <option value="failed">Failed</option>
-            <option value="pending">Pending</option>
           </select>
         </div>
       </div>
@@ -91,12 +128,20 @@ export default function ReviewsPage() {
         </div>
       )}
 
+      {syncMessage && (
+        <div className="flex items-center gap-3 rounded-lg border border-blue-500/30 bg-blue-500/10 p-4">
+          <GitPullRequest className="h-5 w-5 text-blue-500" />
+          <p className="text-sm text-blue-500">{syncMessage}</p>
+        </div>
+      )}
+
       <div className="rounded-lg border border-border bg-card">
         {reviews.length === 0 ? (
           <div className="px-6 py-12 text-center">
-            <p className="text-muted-foreground">No reviews found.</p>
+            <p className="text-muted-foreground">No pull requests found.</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Open a PR in a connected repository to trigger a review.
+              Click &quot;Sync PRs&quot; to import existing open PRs, or open a
+              PR in a connected repository to trigger a review.
             </p>
           </div>
         ) : (
@@ -106,6 +151,7 @@ export default function ReviewsPage() {
                 <th className="px-6 py-3 font-medium">Score</th>
                 <th className="px-6 py-3 font-medium">Repository</th>
                 <th className="px-6 py-3 font-medium">PR</th>
+                <th className="px-6 py-3 font-medium">State</th>
                 <th className="px-6 py-3 font-medium">Findings</th>
                 <th className="px-6 py-3 font-medium">Tokens</th>
                 <th className="px-6 py-3 font-medium">Status</th>
@@ -129,9 +175,27 @@ export default function ReviewsPage() {
                   <td className="px-6 py-4 text-sm font-medium">
                     {review.repo_full_name}
                   </td>
-                  <td className="px-6 py-4 text-sm">#{review.pr_number}</td>
+                  <td className="max-w-[220px] px-6 py-4 text-sm">
+                    <div>#{review.pr_number}</div>
+                    {review.pr_title && (
+                      <div className="truncate text-xs text-muted-foreground" title={review.pr_title}>
+                        {review.pr_title}
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-6 py-4">
+                    {review.pr_state && (
+                      <span
+                        className={`rounded-full px-2 py-1 text-xs font-medium ${prStateBadge(review.pr_state)}`}
+                      >
+                        {review.pr_state}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-6 py-4 text-sm">
-                    {review.findings?.length || 0}
+                    {review.status === "not_reviewed"
+                      ? "—"
+                      : review.findings?.length || 0}
                   </td>
                   <td className="px-6 py-4 text-sm text-muted-foreground">
                     {(() => {
@@ -146,19 +210,13 @@ export default function ReviewsPage() {
                   </td>
                   <td className="px-6 py-4">
                     <span
-                      className={`rounded-full px-2 py-1 text-xs font-medium ${
-                        review.status === "complete"
-                          ? "bg-green-500/10 text-green-500"
-                          : review.status === "failed"
-                            ? "bg-red-500/10 text-red-500"
-                            : "bg-yellow-500/10 text-yellow-500"
-                      }`}
+                      className={`rounded-full px-2 py-1 text-xs font-medium ${reviewStatusBadge(review.status)}`}
                     >
-                      {review.status}
+                      {reviewStatusLabel(review.status)}
                     </span>
                   </td>
                   <td className="px-6 py-4 text-sm text-muted-foreground">
-                    {formatDate(review.created_at)}
+                    {formatDate(review.pr_created_at || review.created_at)}
                   </td>
                 </tr>
               ))}

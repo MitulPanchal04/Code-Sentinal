@@ -106,13 +106,31 @@ sequenceDiagram
 
 | Event | Action | What happens |
 |---|---|---|
-| `pull_request` | opened / synchronize / reopened / ready_for_review | Creates check run (queued), enqueues `ReviewJob` |
-| `pull_request` | closed | No review, ignored |
+| `pull_request` | opened / synchronize / reopened / ready_for_review | Upserts PR row (status=pending), creates check run (queued), enqueues `ReviewJob` |
+| `pull_request` | closed / edited / other | Updates the PR row (title, open/closed/merged state) — no review |
 | `check_run` | rerequested | Re-enqueues the job (this is the "Re-run" button on GitHub) |
-| `installation` | created | Adds `Installation` rows for each accessible repo |
+| `installation` | created | Adds `Installation` rows + enqueues a PR sync job |
 | `installation` | deleted | Removes all `Installation` rows for that installation_id |
-| `installation_repositories` | added | Adds new `Installation` rows |
+| `installation_repositories` | added | Adds new `Installation` rows + enqueues PR sync for those repos |
 | `installation_repositories` | removed | Deletes `Installation` rows |
+
+### Initial PR sync
+
+Synced PRs are stored as `reviews` rows with `status='not_reviewed'` plus PR
+metadata columns (`pr_state`, `pr_title`, `pr_url`, `author`, `head_branch`,
+`base_branch`, `github_pr_id`, `repo_id`, `pr_created_at`, `pr_updated_at`).
+When a real review runs, the same `(repo_full_name, "pr#sha")` row is updated
+in place — sync never enqueues review jobs.
+
+- Sync jobs ride the same `review_jobs` queue with `payload.job_type='sync_prs'`
+  (non-blocking webhooks, retried on failure by the worker).
+- `github/sync.py` does the work: lists accessible repos via
+  `/installation/repositories` (also reconciles missing `Installation` rows),
+  fetches open PRs with 100-per-page pagination, upserts rows, and marks rows
+  whose PRs disappeared from the open list as closed/merged.
+- `POST /api/installations/{id}/sync` lets users trigger it manually — covers
+  apps installed before this feature existed. `GET /api/installations` also
+  auto-enqueues a sync for repos it discovers outside of webhooks.
 | `issue_comment` | created | Bot command handling (e.g. re-trigger) |
 | `pull_request_review_comment` | created | Inline feedback processing |
 

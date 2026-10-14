@@ -158,6 +158,25 @@ export default function RepositoriesPage() {
 
 function RepoCard({ repo }: { repo: Installation }) {
   const githubUrl = `https://github.com/${repo.repo_full_name}`;
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
+
+  const handleSync = async () => {
+    setSyncing(true);
+    setSyncMsg(null);
+    try {
+      const res = await api.syncInstallation(repo.installation_id);
+      setSyncMsg(
+        res.status === "sync_already_queued"
+          ? "Sync already in progress"
+          : "PR sync queued"
+      );
+    } catch (err: unknown) {
+      setSyncMsg(err instanceof Error ? err.message : "Sync failed");
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   return (
     <div className="rounded-lg border border-border bg-card p-5 transition-colors hover:border-primary/50">
@@ -195,10 +214,24 @@ function RepoCard({ repo }: { repo: Installation }) {
         </span>
       </div>
 
-      <div className="mt-2 flex items-center gap-1.5">
-        <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-        <span className="text-xs text-green-500">Active</span>
+      <div className="mt-2 flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+          <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+          <span className="text-xs text-green-500">Active</span>
+        </div>
+        <button
+          onClick={handleSync}
+          disabled={syncing}
+          className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent disabled:opacity-50"
+          title="Sync existing open PRs for this installation"
+        >
+          <RefreshCw size={12} className={syncing ? "animate-spin" : ""} />
+          {syncing ? "Syncing…" : "Sync PRs"}
+        </button>
       </div>
+      {syncMsg && (
+        <p className="mt-2 text-xs text-muted-foreground">{syncMsg}</p>
+      )}
     </div>
   );
 }

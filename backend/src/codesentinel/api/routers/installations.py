@@ -12,6 +12,7 @@ from structlog import get_logger
 from codesentinel.api.deps import get_github_user_id, get_github_access_token
 from codesentinel.database.models import Installation, InstallationSettings, Review
 from codesentinel.database.session import get_db
+from codesentinel.github.sync import enqueue_pr_sync
 
 router = APIRouter(prefix="/api/installations", tags=["installations"])
 logger = get_logger()
@@ -57,13 +58,15 @@ async def _sync_installation_repos(
     db: AsyncSession,
     installation_id: int,
     github_user_id: int,
-) -> None:
+) -> list[str]:
     """Fetch the actual repos accessible to an installation from GitHub and reconcile the DB.
 
     This handles:
     - Repos added or removed after the initial install (without relying solely on webhooks)
     - Installs with 'All repositories' access (webhook payload is empty, API is not)
     - Missed webhook deliveries
+
+    Returns the list of repo full_names that were newly added.
     """
     from codesentinel.github.auth import get_github_auth
 
@@ -84,7 +87,7 @@ async def _sync_installation_repos(
                     params={"per_page": 100, "page": page},
                 )
                 if resp.status_code != 200:
-                    return
+                    return []
                 data = resp.json()
                 repos = data.get("repositories", [])
                 current_repos.update(r["full_name"] for r in repos)
@@ -130,8 +133,15 @@ async def _sync_installation_repos(
                 removed=len(removed),
             )
 
+        return sorted(added)
+
     except Exception as exc:
-        logger.warning("installation_repos_sync_failed", installation_id=installation_id, error=str(exc))
+        logger.warning(
+            "installation_repos_sync_failed",
+            installation_id=installation_id,
+            error=str(exc),
+        )
+        return []
 
 
 async def _require_installation_owner(
@@ -178,10 +188,20 @@ async def list_installations(
     # This runs even if Step 1 failed — ensuring stale repos are cleaned up.
     if known_install_ids:
         logger.info("syncing_installation_repos", installation_ids=known_install_ids)
-        await asyncio.gather(
+        sync_results = await asyncio.gather(
             *[_sync_installation_repos(db, iid, github_user_id) for iid in known_install_ids],
             return_exceptions=True,
         )
+        # Enqueue a PR sync for repos discovered outside of webhooks — this is
+        # what backfills open PRs for apps installed before PR sync existed.
+        for iid, added in zip(known_install_ids, sync_results, strict=True):
+            if isinstance(added, list) and added:
+                try:
+                    await enqueue_pr_sync(iid, added)
+                except Exception as exc:
+                    logger.warning(
+                        "pr_sync_enqueue_failed", installation_id=iid, error=str(exc)
+                    )
 
     result = await db.execute(
         select(Installation)
@@ -200,6 +220,26 @@ async def list_installations(
             }
             for i in installations
         ]
+    }
+
+
+@router.post("/{installation_id}/sync")
+async def sync_installation(
+    installation_id: int,
+    db: AsyncSession = Depends(get_db),
+    github_user_id: int | None = Depends(get_github_user_id),
+) -> dict[str, Any]:
+    """Enqueue a background sync of existing open PRs for an installation.
+
+    Works for installations created before PR syncing existed — no reinstall
+    or new webhook delivery required. Sync is idempotent and never triggers
+    AI reviews.
+    """
+    await _require_installation_owner(db, installation_id, github_user_id)
+    enqueued = await enqueue_pr_sync(installation_id, None)
+    return {
+        "status": "sync_queued" if enqueued else "sync_already_queued",
+        "installation_id": installation_id,
     }
 
 
