@@ -1,13 +1,47 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { api } from "@/lib/api";
-import { formatDate, scoreColor } from "@/lib/utils";
-import { GitBranch, TrendingUp, AlertCircle, CheckCircle2, Loader2, RefreshCw, AlertTriangle } from "lucide-react";
 import Link from "next/link";
+import { api, Review } from "@/lib/api";
+import { formatDate, scoreBadgeClasses, scoreColor } from "@/lib/utils";
+import {
+  GitPullRequest,
+  CheckCircle2,
+  AlertCircle,
+  TrendingUp,
+  RefreshCw,
+  AlertTriangle,
+  ExternalLink,
+  ChevronRight,
+  Shield,
+  Coins,
+  Cpu,
+  Clock,
+  Sparkles,
+  GitBranch,
+  FileCode,
+  Tag,
+  Star,
+  BookMarked,
+  Terminal,
+  Activity,
+  Settings,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
+import { Separator } from "@/components/ui/separator";
 
 export default function DashboardPage() {
-  const [reviews, setReviews] = useState<any[]>([]);
+  const [reviews, setReviews] = useState<Review[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -18,12 +52,12 @@ export default function DashboardPage() {
     else setLoading(true);
     setError(null);
     try {
-      const data = await api.listReviews({ limit: 10 });
-      setReviews(data.reviews);
-      setTotal(data.total);
+      const data = await api.listReviews({ limit: 8 });
+      setReviews(data.reviews || []);
+      setTotal(data.total || 0);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      setError(`API error: ${msg}`);
+      setError(`Failed to connect to backend: ${msg}`);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -38,127 +72,338 @@ export default function DashboardPage() {
 
   const completed = reviews.filter((r) => r.status === "complete").length;
   const failed = reviews.filter((r) => r.status === "failed").length;
+  const scoredReviews = reviews.filter((r) => r.merge_score !== null);
   const avgScore =
-    reviews.length > 0
+    scoredReviews.length > 0
       ? (
-          reviews
-            .filter((r) => r.merge_score !== null)
-            .reduce((sum, r) => sum + (r.merge_score || 0), 0) /
-          Math.max(1, reviews.filter((r) => r.merge_score !== null).length)
+          scoredReviews.reduce((sum, r) => sum + (r.merge_score || 0), 0) /
+          scoredReviews.length
         ).toFixed(1)
-      : "—";
-
-  const stats = [
-    { label: "Total Reviews", value: total, icon: GitBranch, color: "text-blue-500" },
-    { label: "Completed", value: completed, icon: CheckCircle2, color: "text-green-500" },
-    { label: "Failed", value: failed, icon: AlertCircle, color: "text-red-500" },
-    { label: "Avg Score", value: avgScore, icon: TrendingUp, color: "text-yellow-500" },
-  ];
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
-  }
+      : null;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold">Overview</h2>
-        <button
-          onClick={() => fetchData(true)}
-          disabled={refreshing}
-          className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent disabled:opacity-50"
-        >
-          <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
-          Refresh
-        </button>
+    <div className="flex flex-col gap-6">
+      {/* Top Banner & Repo Branch Selector */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#30363d] pb-4">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 rounded-md border border-[#30363d] bg-[#21262d] px-3 py-1.5 text-xs font-semibold text-[#e6edf3]">
+            <GitBranch className="size-3.5 text-muted-foreground" />
+            <span>main</span>
+          </div>
+
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span className="font-mono text-[11px] text-[#e6edf3]">
+              {total} total reviews
+            </span>
+            <span>·</span>
+            <span className="font-mono text-[11px] text-emerald-400">
+              {completed} verified
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => fetchData(true)}
+            disabled={refreshing || loading}
+            className="h-8 text-xs border-[#30363d] bg-[#21262d] text-[#e6edf3] hover:bg-[#30363d] hover:text-white"
+          >
+            <RefreshCw
+              data-icon="inline-start"
+              className={refreshing ? "animate-spin" : ""}
+            />
+            {refreshing ? "Syncing..." : "Sync"}
+          </Button>
+
+          <Button asChild size="sm" className="h-8 text-xs bg-[#238636] hover:bg-[#2ea043] text-white">
+            <Link href="/dashboard/reviews">
+              <GitPullRequest data-icon="inline-start" />
+              Open Pull Requests
+            </Link>
+          </Button>
+        </div>
       </div>
 
       {error && (
-        <div className="flex items-center gap-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-4">
-          <AlertTriangle className="h-5 w-5 text-yellow-500" />
-          <p className="text-sm text-yellow-500">{error}</p>
-        </div>
+        <Alert variant="destructive" className="bg-[#f85149]/10 border-[#f85149]/30 text-[#f85149]">
+          <AlertTriangle className="size-4" />
+          <AlertTitle>API Error</AlertTitle>
+          <AlertDescription className="text-xs">{error}</AlertDescription>
+        </Alert>
       )}
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {stats.map((stat) => {
-          const Icon = stat.icon;
-          return (
-            <div key={stat.label} className="rounded-lg border border-border bg-card p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">{stat.label}</p>
-                  <p className="mt-2 text-2xl font-bold">{stat.value}</p>
-                </div>
-                <Icon className={`h-8 w-8 ${stat.color}`} />
+      {/* GitHub Repo Grid Layout: Main Activity (2/3) + Sidebar (1/3) */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Left Column: Metrics & PR Stream (2 cols) */}
+        <div className="lg:col-span-2 flex flex-col gap-6">
+          {/* Quick Metrics Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="rounded-md border border-[#30363d] bg-[#161b22] p-3.5 flex flex-col gap-1">
+              <span className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
+                Total PRs
+              </span>
+              <span className="text-2xl font-bold font-mono text-white tabular-nums">
+                {total}
+              </span>
+              <span className="text-[10px] text-muted-foreground">Across connected repos</span>
+            </div>
+
+            <div className="rounded-md border border-[#30363d] bg-[#161b22] p-3.5 flex flex-col gap-1">
+              <span className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
+                Completed
+              </span>
+              <span className="text-2xl font-bold font-mono text-emerald-400 tabular-nums">
+                {completed}
+              </span>
+              <span className="text-[10px] text-muted-foreground">Checks passed</span>
+            </div>
+
+            <div className="rounded-md border border-[#30363d] bg-[#161b22] p-3.5 flex flex-col gap-1">
+              <span className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
+                Failed / Retried
+              </span>
+              <span className="text-2xl font-bold font-mono text-[#f85149] tabular-nums">
+                {failed}
+              </span>
+              <span className="text-[10px] text-muted-foreground">Issues found</span>
+            </div>
+
+            <div className="rounded-md border border-[#30363d] bg-[#161b22] p-3.5 flex flex-col gap-1">
+              <span className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
+                Avg Rating
+              </span>
+              <div className="flex items-baseline gap-1">
+                <span className="text-2xl font-bold font-mono text-amber-400 tabular-nums">
+                  {avgScore || "—"}
+                </span>
+                <span className="text-[11px] text-muted-foreground">/ 5</span>
+              </div>
+              <span className="text-[10px] text-muted-foreground">Merge confidence</span>
+            </div>
+          </div>
+
+          {/* Recent Pull Request Reviews (GitHub PR View) */}
+          <div className="rounded-md border border-[#30363d] bg-[#161b22] overflow-hidden">
+            {/* GitHub Header bar */}
+            <div className="flex items-center justify-between border-b border-[#30363d] bg-[#21262d] px-4 py-3">
+              <div className="flex items-center gap-2">
+                <GitPullRequest className="size-4 text-emerald-400" />
+                <span className="text-xs font-semibold text-white">
+                  Recent Evaluated Pull Requests
+                </span>
+              </div>
+              <Link
+                href="/dashboard/reviews"
+                className="text-xs text-[#58a6ff] hover:underline flex items-center gap-1"
+              >
+                <span>View all</span>
+                <ChevronRight className="size-3" />
+              </Link>
+            </div>
+
+            {loading ? (
+              <div className="flex flex-col divide-y divide-[#30363d]/60 p-4 gap-3">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="flex items-center justify-between py-2">
+                    <div className="flex items-center gap-3">
+                      <Skeleton className="size-6 rounded-full bg-[#21262d]" />
+                      <div className="flex flex-col gap-1">
+                        <Skeleton className="h-4 w-56 bg-[#21262d]" />
+                        <Skeleton className="h-3 w-32 bg-[#21262d]" />
+                      </div>
+                    </div>
+                    <Skeleton className="h-6 w-20 bg-[#21262d]" />
+                  </div>
+                ))}
+              </div>
+            ) : reviews.length === 0 ? (
+              <div className="flex flex-col items-center justify-center gap-2 py-16 px-4 text-center">
+                <GitPullRequest className="size-8 text-muted-foreground" />
+                <div className="text-sm font-semibold text-white">No pull requests reviewed yet</div>
+                <p className="max-w-sm text-xs text-muted-foreground">
+                  Install the GitHub App and open a pull request in your repository to see live AI agent evaluations.
+                </p>
+                <Button asChild size="sm" className="mt-3 text-xs bg-[#238636] hover:bg-[#2ea043] text-white">
+                  <Link href="/dashboard/repositories">Connect Repositories</Link>
+                </Button>
+              </div>
+            ) : (
+              <div className="divide-y divide-[#30363d]/60">
+                {reviews.map((review) => {
+                  const tokenTotal = (review.input_tokens || 0) + (review.output_tokens || 0);
+                  const isApproved = review.merge_score && review.merge_score >= 4;
+                  const isWarning = review.merge_score && review.merge_score === 3;
+
+                  return (
+                    <Link
+                      key={review.id}
+                      href={`/dashboard/reviews/${review.id}`}
+                      className="group flex items-start justify-between p-4 transition-colors hover:bg-[#21262d]/50"
+                    >
+                      <div className="flex items-start gap-3 min-w-0">
+                        {/* Status Icon */}
+                        <div className="mt-0.5 shrink-0">
+                          {review.status === "complete" ? (
+                            <GitPullRequest className="size-4 text-emerald-400" />
+                          ) : review.status === "failed" ? (
+                            <AlertCircle className="size-4 text-[#f85149]" />
+                          ) : (
+                            <Clock className="size-4 text-amber-400" />
+                          )}
+                        </div>
+
+                        {/* PR Meta */}
+                        <div className="flex flex-col gap-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-semibold text-sm text-[#e6edf3] group-hover:text-[#58a6ff] transition-colors">
+                              {review.repo_full_name}
+                            </span>
+                            <span className="font-mono text-xs text-muted-foreground">
+                              #{review.pr_number}
+                            </span>
+
+                            {/* Score Tag */}
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[10px] font-mono font-semibold border ${
+                                isApproved
+                                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
+                                  : isWarning
+                                    ? "border-amber-500/40 bg-amber-500/10 text-amber-400"
+                                    : "border-red-500/40 bg-red-500/10 text-red-400"
+                              }`}
+                            >
+                              Score: {review.merge_score !== null ? `${review.merge_score}/5` : "Pending"}
+                            </span>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                            {review.commit_sha && (
+                              <span className="rounded bg-[#21262d] px-1.5 py-0.5 font-mono text-[11px] text-[#e6edf3] border border-[#30363d]">
+                                {review.commit_sha.slice(0, 7)}
+                              </span>
+                            )}
+                            <span>·</span>
+                            <span>{review.findings?.length || 0} findings</span>
+                            <span>·</span>
+                            <span className="font-mono text-[11px]">
+                              {tokenTotal > 0
+                                ? `${(tokenTotal / 1000).toFixed(1)}k tokens`
+                                : "0 tokens"}
+                            </span>
+                            <span>·</span>
+                            <span>{formatDate(review.created_at)}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <ChevronRight className="size-4 text-muted-foreground/60 transition-transform group-hover:translate-x-0.5" />
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right Column: GitHub Repository Sidebar (1 col) */}
+        <div className="flex flex-col gap-5">
+          {/* About Section */}
+          <div className="rounded-md border border-[#30363d] bg-[#161b22] p-4 flex flex-col gap-3">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              About CodeSentinel
+            </h2>
+            <p className="text-xs text-[#e6edf3] leading-relaxed">
+              Autonomous multi-agent code analysis for pull requests. 6 ReAct agents inspect security, logic bugs, style, and test coverage concurrently with cross-model verification.
+            </p>
+
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              {["ai-code-review", "langgraph", "fastapi", "react-agents", "pgvector"].map((tag) => (
+                <span
+                  key={tag}
+                  className="rounded-full border border-[#30363d] bg-[#21262d] px-2 py-0.5 text-[10px] text-[#58a6ff] hover:bg-[#30363d] cursor-pointer transition-colors"
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {/* Active Agents Checklist */}
+          <div className="rounded-md border border-[#30363d] bg-[#161b22] p-4 flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-white">Agent Pipeline Status</span>
+              <span className="size-2 rounded-full bg-emerald-400 animate-pulse" />
+            </div>
+
+            <div className="flex flex-col gap-2 text-xs">
+              <div className="flex items-center justify-between text-muted-foreground">
+                <span className="flex items-center gap-2">
+                  <CheckCircle2 className="size-3.5 text-emerald-400" />
+                  <span>Security Agent</span>
+                </span>
+                <span className="font-mono text-[10px] text-[#e6edf3]">AST + Secrets</span>
+              </div>
+
+              <div className="flex items-center justify-between text-muted-foreground">
+                <span className="flex items-center gap-2">
+                  <CheckCircle2 className="size-3.5 text-emerald-400" />
+                  <span>Bug & Logic Agent</span>
+                </span>
+                <span className="font-mono text-[10px] text-[#e6edf3]">Data-flow</span>
+              </div>
+
+              <div className="flex items-center justify-between text-muted-foreground">
+                <span className="flex items-center gap-2">
+                  <CheckCircle2 className="size-3.5 text-emerald-400" />
+                  <span>Style & Conventions</span>
+                </span>
+                <span className="font-mono text-[10px] text-[#e6edf3]">PEP8 / Clean Code</span>
+              </div>
+
+              <div className="flex items-center justify-between text-muted-foreground">
+                <span className="flex items-center gap-2">
+                  <CheckCircle2 className="size-3.5 text-emerald-400" />
+                  <span>Error Handling</span>
+                </span>
+                <span className="font-mono text-[10px] text-[#e6edf3]">Exceptions</span>
+              </div>
+
+              <div className="flex items-center justify-between text-muted-foreground">
+                <span className="flex items-center gap-2">
+                  <CheckCircle2 className="size-3.5 text-emerald-400" />
+                  <span>Test Coverage</span>
+                </span>
+                <span className="font-mono text-[10px] text-[#e6edf3]">Branches</span>
+              </div>
+
+              <div className="flex items-center justify-between text-muted-foreground">
+                <span className="flex items-center gap-2">
+                  <CheckCircle2 className="size-3.5 text-emerald-400" />
+                  <span>Cross-Model Verifier</span>
+                </span>
+                <span className="font-mono text-[10px] text-emerald-400 font-semibold">Active</span>
               </div>
             </div>
-          );
-        })}
-      </div>
+          </div>
 
-      <div className="rounded-lg border border-border bg-card">
-        <div className="border-b border-border px-6 py-4">
-          <h2 className="text-lg font-semibold">Recent Reviews</h2>
-        </div>
-        {reviews.length === 0 ? (
-          <div className="px-6 py-12 text-center">
-            <p className="text-muted-foreground">No reviews yet.</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Install the GitHub App and open a PR to get started.
+          {/* Quick Actions */}
+          <div className="rounded-md border border-[#30363d] bg-[#161b22] p-4 flex flex-col gap-2.5">
+            <span className="text-xs font-semibold text-white">Repository Settings</span>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Configure confidence thresholds, maximum findings, or disable specific agents in your config.
             </p>
-          </div>
-        ) : (
-          <div className="divide-y divide-border">
-            {reviews.map((review) => (
-              <Link
-                key={review.id}
-                href={`/dashboard/reviews/${review.id}`}
-                className="flex items-center justify-between px-6 py-4 transition-colors hover:bg-accent/50"
-              >
-                <div className="flex items-center gap-4">
-                  <div
-                    className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold ${scoreColor(
-                      review.merge_score || 0
-                    )}`}
-                  >
-                    {review.merge_score || "—"}
-                  </div>
-                  <div>
-                    <p className="font-medium">
-                      {review.repo_full_name}#{review.pr_number}
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      {review.findings?.length || 0} findings ·{" "}
-                      {(() => {
-                        const t = (review.input_tokens || 0) + (review.output_tokens || 0);
-                        return t > 0 ? `${t >= 1000 ? (t / 1000).toFixed(1) + "k" : t} tokens · ` : "";
-                      })()}
-                      {formatDate(review.created_at)}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`rounded-full px-2 py-1 text-xs font-medium ${
-                      review.status === "complete"
-                        ? "bg-green-500/10 text-green-500"
-                        : review.status === "failed"
-                          ? "bg-red-500/10 text-red-500"
-                          : "bg-yellow-500/10 text-yellow-500"
-                    }`}
-                  >
-                    {review.status}
-                  </span>
-                </div>
+            <Button asChild variant="outline" size="sm" className="w-full text-xs border-[#30363d] bg-[#21262d] text-[#e6edf3] hover:bg-[#30363d]">
+              <Link href="/dashboard/settings">
+                <Settings data-icon="inline-start" />
+                Configure Rules
               </Link>
-            ))}
+            </Button>
           </div>
-        )}
+        </div>
       </div>
     </div>
   );

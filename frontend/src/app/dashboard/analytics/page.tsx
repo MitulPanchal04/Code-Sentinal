@@ -1,15 +1,40 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { api } from "@/lib/api";
-import { Loader2, RefreshCw, AlertTriangle } from "lucide-react";
+import { useEffect, useState, useCallback, useMemo } from "react";
+import { api, Installation } from "@/lib/api";
+import {
+  BarChart3,
+  TrendingUp,
+  CheckCircle2,
+  AlertCircle,
+  HelpCircle,
+  RefreshCw,
+  Clock,
+  Sparkles,
+  BookMarked,
+  ShieldCheck,
+  Percent,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
+
+interface InsightData {
+  window: string;
+  total_findings: number;
+  disputed_findings: number;
+  resolved_findings: number;
+  quiet_drops: number;
+}
 
 export default function AnalyticsPage() {
-  const [installations, setInstallations] = useState<any[]>([]);
-  const [insights, setInsights] = useState<any[]>([]);
+  const [installations, setInstallations] = useState<Installation[]>([]);
+  const [insights, setInsights] = useState<InsightData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [activeWindow, setActiveWindow] = useState<string>("30d");
 
   const fetchData = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
@@ -17,21 +42,22 @@ export default function AnalyticsPage() {
     setError(null);
     try {
       const data = await api.listInstallations();
-      setInstallations(data.installations);
+      const instList = data.installations || [];
+      setInstallations(instList);
 
-      // Fetch insights from all installations in parallel, then aggregate
-      if (data.installations.length > 0) {
+      if (instList.length > 0) {
         const allInsights = await Promise.all(
-          data.installations.map((inst: any) =>
-            api.getInsights(inst.installation_id).catch(() => ({ insights: [] }))
+          instList.map((inst) =>
+            api
+              .getInsights(inst.installation_id)
+              .catch(() => ({ insights: [] }))
           )
         );
 
-        // Aggregate by window (7d, 30d, 90d)
-        const aggregated: Record<string, any> = {};
+        const aggregated: Record<string, InsightData> = {};
         for (const result of allInsights) {
-          for (const insight of result.insights) {
-            const w = (insight as any).window;
+          for (const item of result.insights as any[]) {
+            const w = item.window || "30d";
             if (!aggregated[w]) {
               aggregated[w] = {
                 window: w,
@@ -41,10 +67,10 @@ export default function AnalyticsPage() {
                 quiet_drops: 0,
               };
             }
-            aggregated[w].total_findings += (insight as any).total_findings || 0;
-            aggregated[w].disputed_findings += (insight as any).disputed_findings || 0;
-            aggregated[w].resolved_findings += (insight as any).resolved_findings || 0;
-            aggregated[w].quiet_drops += (insight as any).quiet_drops || 0;
+            aggregated[w].total_findings += item.total_findings || 0;
+            aggregated[w].disputed_findings += item.disputed_findings || 0;
+            aggregated[w].resolved_findings += item.resolved_findings || 0;
+            aggregated[w].quiet_drops += item.quiet_drops || 0;
           }
         }
         setInsights(Object.values(aggregated));
@@ -64,97 +90,152 @@ export default function AnalyticsPage() {
     fetchData();
   }, [fetchData]);
 
-  if (loading) {
+  const currentInsight = useMemo(() => {
+    const found = insights.find((i) => i.window === activeWindow);
     return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
+      found || {
+        window: activeWindow,
+        total_findings: 0,
+        disputed_findings: 0,
+        resolved_findings: 0,
+        quiet_drops: 0,
+      }
     );
-  }
+  }, [insights, activeWindow]);
+
+  const totalEvaluated = currentInsight.total_findings || 0;
+  const resolutionRate =
+    totalEvaluated > 0
+      ? Math.round((currentInsight.resolved_findings / totalEvaluated) * 100)
+      : 0;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold">Analytics</h2>
-        <button
-          onClick={() => fetchData(true)}
-          disabled={refreshing}
-          className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent disabled:opacity-50"
-        >
-          <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
-          Refresh
-        </button>
+    <div className="flex flex-col gap-6">
+      {/* GitHub Insights Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#30363d] pb-4">
+        <div>
+          <h1 className="text-xl font-semibold text-white">Repository Insights & Dispositions</h1>
+          <p className="text-xs text-muted-foreground pt-0.5">
+            Agent finding accuracy, false-positive filtering rates, and developer resolutions.
+          </p>
+        </div>
+
+        {/* Timeframe pill tabs */}
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-md border border-[#30363d] bg-[#21262d] p-0.5 text-xs">
+            {["7d", "30d", "90d"].map((w) => (
+              <button
+                key={w}
+                onClick={() => setActiveWindow(w)}
+                className={`rounded px-2.5 py-1 text-xs font-medium transition-colors ${
+                  activeWindow === w
+                    ? "bg-[#30363d] text-white font-semibold shadow-xs"
+                    : "text-muted-foreground hover:text-white"
+                }`}
+              >
+                {w === "7d" ? "7 days" : w === "30d" ? "30 days" : "90 days"}
+              </button>
+            ))}
+          </div>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => fetchData(true)}
+            disabled={refreshing || loading}
+            className="h-7 text-xs border-[#30363d] bg-[#21262d] text-[#e6edf3] hover:bg-[#30363d]"
+          >
+            <RefreshCw
+              data-icon="inline-start"
+              className={refreshing ? "animate-spin" : ""}
+            />
+            {refreshing ? "..." : "Sync"}
+          </Button>
+        </div>
       </div>
 
       {error && (
-        <div className="flex items-center gap-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-4">
-          <AlertTriangle className="h-5 w-5 text-yellow-500" />
-          <p className="text-sm text-yellow-500">{error}</p>
-        </div>
+        <Alert variant="destructive" className="bg-[#f85149]/10 border-[#f85149]/30 text-[#f85149]">
+          <AlertCircle className="size-4" />
+          <AlertTitle>Analytics Error</AlertTitle>
+          <AlertDescription className="text-xs">{error}</AlertDescription>
+        </Alert>
       )}
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        {["7d", "30d", "90d"].map((window) => {
-          const insight = insights.find((i: any) => i.window === window);
-          return (
-            <div key={window} className="rounded-lg border border-border bg-card p-6">
-              <h3 className="text-sm font-medium uppercase text-muted-foreground">
-                {window}
-              </h3>
-              <div className="mt-4 space-y-3">
-                <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Total Findings</span>
-                  <span className="font-bold">{insight?.total_findings ?? "—"}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Disputed</span>
-                  <span className="font-bold text-yellow-500">{insight?.disputed_findings ?? "—"}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Resolved</span>
-                  <span className="font-bold text-green-500">{insight?.resolved_findings ?? "—"}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Quiet Drops</span>
-                  <span className="font-bold text-red-500">{insight?.quiet_drops ?? "—"}</span>
-                </div>
-              </div>
-            </div>
-          );
-        })}
+      {/* GitHub Insight Stat Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="rounded-md border border-[#30363d] bg-[#161b22] p-4 flex flex-col gap-1">
+          <span className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">
+            Total Issues Flagged
+          </span>
+          <span className="text-2xl font-bold font-mono text-white tabular-nums">
+            {currentInsight.total_findings}
+          </span>
+          <span className="text-[11px] text-muted-foreground">In past {activeWindow}</span>
+        </div>
+
+        <div className="rounded-md border border-[#30363d] bg-[#161b22] p-4 flex flex-col gap-1">
+          <span className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">
+            Resolved by Authors
+          </span>
+          <span className="text-2xl font-bold font-mono text-emerald-400 tabular-nums">
+            {currentInsight.resolved_findings}
+          </span>
+          <span className="text-[11px] text-muted-foreground">{resolutionRate}% fix rate</span>
+        </div>
+
+        <div className="rounded-md border border-[#30363d] bg-[#161b22] p-4 flex flex-col gap-1">
+          <span className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">
+            Disputed / Dismissed
+          </span>
+          <span className="text-2xl font-bold font-mono text-amber-400 tabular-nums">
+            {currentInsight.disputed_findings}
+          </span>
+          <span className="text-[11px] text-muted-foreground">Reported by developers</span>
+        </div>
+
+        <div className="rounded-md border border-[#30363d] bg-[#161b22] p-4 flex flex-col gap-1">
+          <span className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">
+            Quiet Drops (FP Filter)
+          </span>
+          <span className="text-2xl font-bold font-mono text-[#58a6ff] tabular-nums">
+            {currentInsight.quiet_drops}
+          </span>
+          <span className="text-[11px] text-muted-foreground">Blocked by verifier</span>
+        </div>
       </div>
 
-      <div className="rounded-lg border border-border bg-card">
-        <div className="border-b border-border px-6 py-4">
-          <h3 className="text-lg font-semibold">Connected Repositories</h3>
+      {/* Repositories Performance Table */}
+      <div className="rounded-md border border-[#30363d] bg-[#161b22] overflow-hidden">
+        <div className="border-b border-[#30363d] bg-[#21262d] px-4 py-2.5">
+          <h2 className="text-xs font-semibold text-white">Repository Review Breakdown</h2>
         </div>
-        {installations.length === 0 ? (
-          <div className="px-6 py-12 text-center">
-            <p className="text-muted-foreground">No installations found.</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Install the GitHub App to get started.
-            </p>
-          </div>
-        ) : (
-          <div className="divide-y divide-border">
-            {installations.map((inst: any) => (
-              <div
-                key={`${inst.installation_id}-${inst.repo_full_name}`}
-                className="flex items-center justify-between px-6 py-4"
-              >
-                <div>
-                  <p className="font-medium">{inst.repo_full_name}</p>
-                  <p className="text-sm text-muted-foreground">
-                    Installation #{inst.installation_id}
-                  </p>
-                </div>
-                <span className="text-sm text-muted-foreground">
-                  {inst.model_id || "default model"}
+
+        <div className="divide-y divide-[#30363d]/60 text-xs">
+          {installations.map((inst) => (
+            <div
+              key={`${inst.installation_id}-${inst.repo_full_name}`}
+              className="flex items-center justify-between p-4 hover:bg-[#21262d]/40 transition-colors"
+            >
+              <div className="flex items-center gap-2.5">
+                <BookMarked className="size-4 text-muted-foreground" />
+                <span className="font-semibold text-[#58a6ff]">{inst.repo_full_name}</span>
+                <span className="text-muted-foreground font-mono">#{inst.installation_id}</span>
+              </div>
+
+              <div className="flex items-center gap-4">
+                <span className="rounded bg-[#21262d] px-2 py-0.5 font-mono text-[11px] text-[#e6edf3] border border-[#30363d]">
+                  {inst.model_id || "gpt-4o"}
+                </span>
+
+                <span className="flex items-center gap-1.5 text-emerald-400 font-medium">
+                  <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  Active
                 </span>
               </div>
-            ))}
-          </div>
-        )}
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

@@ -1,8 +1,7 @@
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { Sidenav } from "@/components/layout/Sidenav";
-import { Topbar } from "@/components/layout/Topbar";
+import { GitHubHeader } from "@/components/layout/GitHubHeader";
 
 export default async function DashboardLayout({
   children,
@@ -16,12 +15,11 @@ export default async function DashboardLayout({
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <Sidenav />
-      <div className="ml-64">
-        <Topbar />
-        <main className="p-8">{children}</main>
-      </div>
+    <div className="min-h-screen bg-[#0d1117] text-[#e6edf3] font-sans">
+      <GitHubHeader />
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 w-full">
+        {children}
+      </main>
     </div>
   );
 }
