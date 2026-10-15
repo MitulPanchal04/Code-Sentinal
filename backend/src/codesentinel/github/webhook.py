@@ -12,6 +12,11 @@ from codesentinel.database.session import async_session_factory
 from codesentinel.database.models import ReviewJob, Installation
 from codesentinel.github.auth import get_github_auth
 from codesentinel.github.client import GitHubClient
+from codesentinel.github.sync import (
+    enqueue_pr_sync,
+    mark_review_pending,
+    upsert_pull_request_row,
+)
 
 logger = get_logger()
 _settings = get_settings()
@@ -42,8 +47,10 @@ async def handle_webhook_event(
 ) -> dict[str, Any]:
     """Route webhook events to appropriate handlers."""
 
-    if event == "pull_request" and action in REVIEW_TRIGGERING_ACTIONS:
-        return await _handle_pull_request(payload)
+    if event == "pull_request":
+        if action in REVIEW_TRIGGERING_ACTIONS:
+            return await _handle_pull_request(payload)
+        return await _handle_pull_request_state(payload, action)
     elif event == "issue_comment":
         return await _handle_issue_comment(payload)
     elif event == "pull_request_review_comment":
@@ -67,11 +74,32 @@ async def _handle_pull_request(payload: dict) -> dict:
     pr_number = pr["number"]
     commit_sha = pr["head"]["sha"]
 
+    skip_reason = None
     if pr.get("draft") and not _should_review_draft(pr):
-        return {"status": "skipped", "reason": "draft_pr"}
+        skip_reason = "draft_pr"
+    elif _is_bot_actor(pr.get("user", {})):
+        skip_reason = "bot_author"
 
-    if _is_bot_actor(pr.get("user", {})):
-        return {"status": "skipped", "reason": "bot_author"}
+    # Record/update the dashboard row for this PR. Skipped reviews still get a
+    # 'not_reviewed' row so the PR is visible; reviewed PRs become 'pending'.
+    try:
+        async with async_session_factory() as session:
+            await upsert_pull_request_row(
+                session,
+                installation["id"],
+                repo_full_name,
+                pr,
+                mark_pending=skip_reason is None,
+                repo_id=repo.get("id"),
+            )
+            await session.commit()
+    except Exception as e:
+        logger.warning(
+            "pr_row_upsert_failed", repo=repo_full_name, pr=pr_number, error=str(e)
+        )
+
+    if skip_reason:
+        return {"status": "skipped", "reason": skip_reason}
 
     owner, repo_name = repo_full_name.split("/")
 
@@ -104,6 +132,7 @@ async def _handle_pull_request(payload: dict) -> dict:
         "commit_sha": commit_sha,
         "pr_title": pr.get("title", ""),
         "pr_body": pr.get("body", ""),
+        "pr_url": pr.get("html_url", ""),
         "pr_head_ref": pr.get("head", {}).get("ref", ""),
         "pr_base_ref": pr.get("base", {}).get("ref", ""),
         "review_mode": "review",
@@ -117,6 +146,41 @@ async def _handle_pull_request(payload: dict) -> dict:
         "review_enqueued", repo=repo_full_name, pr=pr_number, sha=commit_sha[:8]
     )
     return {"status": "enqueued", "pr_number": pr_number}
+
+
+async def _handle_pull_request_state(payload: dict, action: str) -> dict:
+    """Update PR metadata/state for non-review pull_request events.
+
+    Covers closed/merged (we don't review those), edited, assigned, etc. so
+    the dashboard stays in sync without triggering a review.
+    """
+    pr = payload.get("pull_request")
+    repo = payload.get("repository")
+    installation = payload.get("installation")
+    if not pr or not repo or not installation:
+        return {"status": "ignored", "reason": "missing_fields"}
+
+    try:
+        async with async_session_factory() as session:
+            await upsert_pull_request_row(
+                session,
+                installation["id"],
+                repo["full_name"],
+                pr,
+                repo_id=repo.get("id"),
+            )
+            await session.commit()
+    except Exception as e:
+        logger.warning(
+            "pr_state_update_failed",
+            repo=repo.get("full_name"),
+            pr=pr.get("number"),
+            action=action,
+            error=str(e),
+        )
+        return {"status": "error", "action": action}
+
+    return {"status": "pr_updated", "action": action}
 
 
 async def _handle_issue_comment(payload: dict) -> dict:
@@ -146,6 +210,14 @@ async def _handle_issue_comment(payload: dict) -> dict:
     commit_sha = await _get_pr_head_sha(
         installation["id"], repo["full_name"], pr_number
     )
+
+    if mode == "review" and commit_sha:
+        try:
+            await mark_review_pending(
+                installation["id"], repo["full_name"], pr_number, commit_sha
+            )
+        except Exception as e:
+            logger.warning("mark_pending_failed", error=str(e))
 
     job_payload = {
         "installation_id": installation["id"],
@@ -226,6 +298,19 @@ async def _handle_installation(payload: dict, action: str) -> dict:
         logger.info(
             "installation_created", installation_id=installation_id, repos=len(repos)
         )
+
+        # Enqueue a background sync of existing open PRs. Passing None makes
+        # the job discover every accessible repo via the installation token —
+        # this also covers 'all repositories' installs and reconciles any
+        # Installation rows missing from the payload.
+        try:
+            await enqueue_pr_sync(installation_id, None)
+        except Exception as e:
+            logger.warning(
+                "pr_sync_enqueue_failed",
+                installation_id=installation_id,
+                error=str(e),
+            )
         return {"status": "installed", "repos": len(repos)}
 
     elif action == "deleted":
@@ -280,6 +365,18 @@ async def _handle_installation_repositories(payload: dict, action: str) -> dict:
         logger.info(
             "repos_added", installation_id=installation_id, repos=len(repos)
         )
+
+        # Sync existing open PRs for the newly accessible repos only.
+        try:
+            await enqueue_pr_sync(
+                installation_id, [r["full_name"] for r in repos]
+            )
+        except Exception as e:
+            logger.warning(
+                "pr_sync_enqueue_failed",
+                installation_id=installation_id,
+                error=str(e),
+            )
         return {"status": "repos_added", "count": len(repos)}
 
     elif action == "removed":
@@ -335,6 +432,13 @@ async def _handle_check_rerequest(payload: dict) -> dict:
         check_run_id = new_check.get("id")
     except Exception as e:
         logger.warning("check_run_create_failed", error=str(e))
+
+    try:
+        await mark_review_pending(
+            installation["id"], repo_full_name, pr_number, commit_sha
+        )
+    except Exception as e:
+        logger.warning("mark_pending_failed", error=str(e))
 
     job_payload = {
         "installation_id": installation["id"],

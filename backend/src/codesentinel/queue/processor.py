@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import quote
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from structlog import get_logger
 
 from codesentinel.agents.pipeline import run_review
@@ -16,6 +16,11 @@ from codesentinel.database.models import Review, ReviewJob, utcnow
 from codesentinel.database.session import async_session_factory
 from codesentinel.github.auth import get_github_auth
 from codesentinel.github.client import GitHubClient
+from codesentinel.github.sync import (
+    JOB_TYPE_SYNC_PRS,
+    apply_pr_meta_dict,
+    sync_installation_pull_requests,
+)
 
 logger = get_logger()
 _settings = get_settings()
@@ -143,6 +148,14 @@ def _build_inline_comments(findings: list[dict]) -> list[dict]:
 async def process_review_job(job: ReviewJob) -> None:
     """Execute a single review job end-to-end."""
     payload = job.payload
+
+    if payload.get("job_type") == JOB_TYPE_SYNC_PRS:
+        # Not a review — sync existing open PRs for the installation.
+        await sync_installation_pull_requests(
+            payload["installation_id"], payload.get("repos") or None
+        )
+        return
+
     installation_id = payload["installation_id"]
     repo_full_name = payload["repo_full_name"]
     pr_number = payload["pr_number"]
@@ -215,6 +228,16 @@ async def process_review_job(job: ReviewJob) -> None:
             )
         except Exception:
             pass
+
+    # PR metadata carried in the job payload — keeps dashboard rows fresh
+    # for PRs that were synced before they were ever reviewed.
+    pr_meta = {
+        "pr_title": payload.get("pr_title"),
+        "pr_url": payload.get("pr_url"),
+        "author": payload.get("author"),
+        "head_branch": payload.get("pr_head_ref"),
+        "base_branch": payload.get("pr_base_ref"),
+    }
 
     try:
         # Run the LangGraph review pipeline
@@ -348,6 +371,7 @@ async def process_review_job(job: ReviewJob) -> None:
             cost=cost,
             enabled_agent_count=result.get("enabled_agent_count", 0),
             review_mode=review_mode,
+            pr_meta=pr_meta,
         )
 
         logger.info(
@@ -384,6 +408,7 @@ async def process_review_job(job: ReviewJob) -> None:
             enabled_agent_count=0,
             review_mode=review_mode,
             error_message=str(e),
+            pr_meta=pr_meta,
         )
 
         # Build failure check run summary with tokens if any were used
@@ -485,6 +510,7 @@ async def _store_review_result(
     enabled_agent_count: int,
     review_mode: str,
     error_message: str | None = None,
+    pr_meta: dict | None = None,
 ) -> None:
     """Store or update review results in the database."""
     async with async_session_factory() as session:
@@ -531,5 +557,19 @@ async def _store_review_result(
                 error_message=error_message,
             )
             session.add(review)
+
+        if pr_meta:
+            apply_pr_meta_dict(review, pr_meta)
+
+        # Once a real review result is stored, drop stale not_reviewed rows
+        # for the same PR at other commit SHAs.
+        await session.execute(
+            delete(Review).where(
+                Review.repo_full_name == repo_full_name,
+                Review.pr_number == pr_number,
+                Review.status == "not_reviewed",
+                Review.pr_number_commit_sha != pr_number_commit_sha,
+            )
+        )
 
         await session.commit()

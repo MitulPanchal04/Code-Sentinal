@@ -19,6 +19,16 @@ export interface Review {
   pr_number: number;
   commit_sha: string;
   status: string;
+  pr_state: string | null;
+  pr_title: string | null;
+  pr_url: string | null;
+  author: string | null;
+  head_branch: string | null;
+  base_branch: string | null;
+  github_pr_id: number | null;
+  repo_id: number | null;
+  pr_created_at: string | null;
+  pr_updated_at: string | null;
   findings: Finding[];
   summary: string;
   diagram: string;
@@ -92,6 +102,12 @@ export const api = {
 
   listRepos: (installationId: number) =>
     apiFetch<{ repos: Installation[] }>(`/api/installations/${installationId}/repos`),
+
+  syncInstallation: (installationId: number) =>
+    apiFetch<{ status: string; installation_id: number }>(
+      `/api/installations/${installationId}/sync`,
+      { method: "POST" }
+    ),
 
   getSettings: (installationId: number) =>
     apiFetch<{ installation_id: number; settings: Record<string, unknown> | null }>(

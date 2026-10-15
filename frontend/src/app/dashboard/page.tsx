@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { api } from "@/lib/api";
-import { formatDate, scoreColor } from "@/lib/utils";
+import { formatDate, scoreColor, reviewStatusBadge, reviewStatusLabel } from "@/lib/utils";
 import { GitBranch, TrendingUp, AlertCircle, CheckCircle2, Loader2, RefreshCw, AlertTriangle } from "lucide-react";
 import Link from "next/link";
 
@@ -107,9 +107,10 @@ export default function DashboardPage() {
         </div>
         {reviews.length === 0 ? (
           <div className="px-6 py-12 text-center">
-            <p className="text-muted-foreground">No reviews yet.</p>
+            <p className="text-muted-foreground">No pull requests yet.</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Install the GitHub App and open a PR to get started.
+              Install the GitHub App — existing open PRs are synced
+              automatically — or open a PR to trigger a review.
             </p>
           </div>
         ) : (
@@ -144,15 +145,9 @@ export default function DashboardPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   <span
-                    className={`rounded-full px-2 py-1 text-xs font-medium ${
-                      review.status === "complete"
-                        ? "bg-green-500/10 text-green-500"
-                        : review.status === "failed"
-                          ? "bg-red-500/10 text-red-500"
-                          : "bg-yellow-500/10 text-yellow-500"
-                    }`}
+                    className={`rounded-full px-2 py-1 text-xs font-medium ${reviewStatusBadge(review.status)}`}
                   >
-                    {review.status}
+                    {reviewStatusLabel(review.status)}
                   </span>
                 </div>
               </Link>

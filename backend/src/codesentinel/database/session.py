@@ -78,6 +78,25 @@ async def init_db() -> bool:
                     "ON installations (github_user_id)"
                 )
             )
+            # PR metadata columns (mirrors alembic revision 0002)
+            for column, ddl in [
+                ("pr_state", "VARCHAR(20)"),
+                ("pr_title", "TEXT"),
+                ("pr_url", "VARCHAR(500)"),
+                ("author", "VARCHAR(255)"),
+                ("head_branch", "VARCHAR(255)"),
+                ("base_branch", "VARCHAR(255)"),
+                ("github_pr_id", "BIGINT"),
+                ("repo_id", "BIGINT"),
+                ("pr_created_at", "TIMESTAMP"),
+                ("pr_updated_at", "TIMESTAMP"),
+            ]:
+                await conn.execute(
+                    text(
+                        f"ALTER TABLE reviews "
+                        f"ADD COLUMN IF NOT EXISTS {column} {ddl}"
+                    )
+                )
         logger.info("database_initialized")
         return True
     except Exception as e:

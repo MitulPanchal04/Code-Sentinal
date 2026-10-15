@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { formatDate, severityColor, scoreColor } from "@/lib/utils";
-import { ArrowLeft, GitBranch, DollarSign, Zap, Loader2, AlertTriangle } from "lucide-react";
+import { ArrowLeft, GitBranch, DollarSign, Zap, Loader2, AlertTriangle, ExternalLink, GitPullRequest } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
@@ -84,9 +84,21 @@ export default function ReviewDetailPage() {
             <h2 className="text-xl font-semibold">
               {review.repo_full_name}#{review.pr_number}
             </h2>
+            {review.pr_title && (
+              <p className="mt-1 text-sm font-medium">{review.pr_title}</p>
+            )}
             <p className="mt-1 text-sm text-muted-foreground">
               Commit {review.commit_sha?.slice(0, 8)} · {formatDate(review.created_at)}
             </p>
+            {(review.author || review.head_branch || review.base_branch) && (
+              <p className="mt-1 text-sm text-muted-foreground">
+                {review.author && <>by {review.author} · </>}
+                {review.head_branch && review.base_branch && (
+                  <>{review.head_branch} → {review.base_branch} · </>
+                )}
+                {review.pr_state && <>PR {review.pr_state}</>}
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-4">
             <div
@@ -130,6 +142,30 @@ export default function ReviewDetailPage() {
         </div>
       </div>
 
+      {review.status === "not_reviewed" && (
+        <div className="flex items-center gap-3 rounded-lg border border-border bg-card p-4">
+          <GitPullRequest className="h-5 w-5 text-muted-foreground" />
+          <div className="flex-1">
+            <p className="text-sm font-medium">Not reviewed yet</p>
+            <p className="text-xs text-muted-foreground">
+              This open PR was synced from GitHub but no AI review has run.
+              Comment <code>@codesentinel review</code> on the PR or push new
+              commits to trigger one.
+            </p>
+          </div>
+          {review.pr_url && (
+            <a
+              href={review.pr_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm transition-colors hover:bg-accent"
+            >
+              Open on GitHub <ExternalLink size={12} />
+            </a>
+          )}
+        </div>
+      )}
+
       {review.summary && (
         <div className="rounded-lg border border-border bg-card p-6">
           <h3 className="mb-3 text-lg font-semibold">Summary</h3>
@@ -162,7 +198,9 @@ export default function ReviewDetailPage() {
 
         {findings.length === 0 ? (
           <div className="px-6 py-12 text-center text-muted-foreground">
-            No findings. Clean review!
+            {review.status === "not_reviewed"
+              ? "This PR has not been reviewed yet."
+              : "No findings. Clean review!"}
           </div>
         ) : (
           <div className="divide-y divide-border">
