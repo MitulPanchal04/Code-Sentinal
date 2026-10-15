@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { api, type RepoSettings } from "@/lib/api";
+import { marked } from "marked";
 import {
   X,
   Shield,
@@ -10,15 +11,31 @@ import {
   Code2,
   FileText,
   CheckCircle2,
-  Sliders,
-  Zap,
+  SlidersHorizontal,
   AlertCircle,
   BookOpen,
-  Settings,
   Plus,
   Loader2,
   Check,
+  Eye,
+  Edit3,
+  Filter,
+  Gauge,
+  Layers,
   HelpCircle,
+  ExternalLink,
+  ChevronDown,
+  ChevronUp,
+  Bold,
+  Italic,
+  Code,
+  List,
+  ListOrdered,
+  CheckSquare,
+  Quote,
+  Table as TableIcon,
+  Heading2,
+  Sparkles,
 } from "lucide-react";
 
 interface RepoSettingsModalProps {
@@ -31,20 +48,24 @@ interface RepoSettingsModalProps {
 
 const PRESETS = {
   lenient: {
-    name: "Lenient",
-    badge: "⚡ Internal Dev & Testing",
+    id: "lenient",
+    name: "Rapid Development & Testing",
+    tagline: "High velocity for non-production & internal prototypes",
     description:
-      "Minimal friction for rapid prototyping. Scans only for critical bugs and severe vulnerabilities. Skips style, comment, and test coverage checks.",
+      "Bypasses stylistic, documentation, and non-blocking checks to minimize review friction. Focuses solely on critical runtime bugs and high-severity security vulnerabilities.",
+    badge: "Low Noise",
     enabled_agents: ["security", "bugs"],
     min_severity: "warning",
     min_confidence: 85,
     max_findings: 15,
   },
   standard: {
-    name: "Standard",
-    badge: "⚖️ Production Default",
+    id: "standard",
+    name: "Production Standard",
+    tagline: "Balanced coverage for core feature repositories",
     description:
-      "Balanced squad review covering security, logic, error handling, style, and comments with sensible thresholds.",
+      "Comprehensive analysis across all 6 inspection dimensions. Applies industry-standard confidence thresholds to catch errors while maintaining high precision.",
+    badge: "Recommended",
     enabled_agents: [
       "security",
       "bugs",
@@ -58,10 +79,12 @@ const PRESETS = {
     max_findings: 25,
   },
   strict: {
-    name: "Strict",
-    badge: "🛡️ Client & Mission Critical",
+    id: "strict",
+    name: "High-Assurance Enterprise",
+    tagline: "Zero-tolerance for client projects & critical infrastructure",
     description:
-      "Zero-tolerance policy. Flags edge-case errors, architectural deviations, missing test coverage, and documentation drift.",
+      "Rigorous inspection policy. Enforces strict test coverage requirements, defensive error handling, and architectural invariants. Lower confidence cutoff flags subtle edge cases.",
+    badge: "Maximum Rigor",
     enabled_agents: [
       "security",
       "bugs",
@@ -72,85 +95,93 @@ const PRESETS = {
     ],
     min_severity: "info",
     min_confidence: 60,
-    max_findings: 35,
+    max_findings: 40,
   },
   custom: {
-    name: "Custom",
-    badge: "⚙️ Custom Configuration",
+    id: "custom",
+    name: "Custom Policy",
+    tagline: "Individually configured inspection parameters",
     description:
-      "Manually select active agents, severity gates, confidence cutoffs, and tailored invariants.",
+      "Tailored selection of active inspection agents, severity gates, confidence filters, and domain-specific rulebooks.",
+    badge: "Customized",
   },
 };
 
-const AGENT_CATALOG = [
+const AGENT_MODULES = [
   {
     id: "security",
     name: "Security Sentinel",
+    category: "Vulnerabilities & Invariants",
     icon: Shield,
-    color: "text-red-400 bg-red-500/10 border-red-500/20",
-    desc: "Detects CVEs, secrets leakage, OWASP Top 10, SQLi, and unauthorized access.",
+    desc: "Detects CVEs, secrets leakage, OWASP Top 10, SQLi, and authorization flaws.",
   },
   {
     id: "bugs",
-    name: "Bugs & Concurrency",
+    name: "Logic & Concurrency",
+    category: "Runtime Stability",
     icon: Bug,
-    color: "text-orange-400 bg-orange-500/10 border-orange-500/20",
-    desc: "Detects null-pointer dereferences, off-by-one errors, race conditions, and memory leaks.",
+    desc: "Identifies null dereferences, race conditions, memory leaks, and off-by-one errors.",
   },
   {
     id: "error_handling",
-    name: "Error Handling & Resilience",
+    name: "Defensive Error Handling",
+    category: "Resilience",
     icon: AlertCircle,
-    color: "text-yellow-400 bg-yellow-500/10 border-yellow-500/20",
-    desc: "Catches unhandled promise rejections, empty catches, missing retries, and crash risks.",
+    desc: "Validates exception boundaries, unhandled rejections, and silent failures.",
   },
   {
     id: "style",
-    name: "Clean Code & Style",
+    name: "Code Quality & Consistency",
+    category: "Clean Code",
     icon: Code2,
-    color: "text-blue-400 bg-blue-500/10 border-blue-500/20",
-    desc: "Enforces idiom consistency, naming conventions, dead code removal, and clean architecture.",
+    desc: "Enforces design patterns, idiomatic conventions, and dead code cleanup.",
   },
   {
     id: "test_coverage",
     name: "Test Coverage Assurance",
+    category: "Verification",
     icon: CheckCircle2,
-    color: "text-green-400 bg-green-500/10 border-green-500/20",
-    desc: "Pinpoints untested edge cases, missing unit/integration tests, and assertion gaps.",
+    desc: "Pinpoints untested edge cases, missing test fixtures, and assertion gaps.",
   },
   {
     id: "comment_accuracy",
-    name: "Docs & Docstring Integrity",
+    name: "Documentation Integrity",
+    category: "Specification",
     icon: FileText,
-    color: "text-purple-400 bg-purple-500/10 border-purple-500/20",
-    desc: "Identifies stale comments, misleading docstrings, and documentation drift against real code.",
+    desc: "Verifies docstring accuracy and catches outdated documentation drift.",
   },
 ];
 
 const RULE_TEMPLATES = [
   {
+    label: "Data Privacy & PII",
+    content: `### Security & Privacy Invariant
+- **No PII Logging**: Never log passwords, API tokens, user emails, phone numbers, or credit card details.
+- **Sanitization**: All user input must pass through the schema validator prior to internal handling.`,
+  },
+  {
     label: "Tenant Isolation",
-    snippet: "- All database queries and service methods MUST filter by `tenant_id`.",
+    content: `### Multi-Tenancy Invariant
+- **Tenant Scoping**: Every database query and data layer method MUST explicitly include \`tenant_id\` filtering.
+- **Cross-Tenant Guard**: Endpoints must verify tenant ownership before mutating shared resources.`,
   },
   {
-    label: "PII & Secrets",
-    snippet:
-      "- NEVER log or persist PII (passwords, tokens, emails, phone numbers, auth credentials).",
-  },
-  {
-    label: "Immutable State",
-    snippet:
-      "- State mutations must be immutable; never mutate objects or arrays directly.",
+    label: "Defensive Error Handling",
+    content: `### Error Handling Policy
+- **Explicit Failure Modes**: Asynchronous promises must have explicit catch handlers or error boundaries.
+- **No Silent Failures**: Empty catch blocks are strictly prohibited; errors must be logged with structured metadata.`,
   },
   {
     label: "API Compatibility",
-    snippet:
-      "- Public API schemas cannot remove or rename existing fields without deprecation.",
+    content: `### Public API Contract Invariant
+- **Backward Compatibility**: Field removals or type modifications on public endpoints require an explicit deprecation cycle.
+- **Response Format**: All HTTP 4xx/5xx responses must conform to the standard RFC 7807 problem details specification.`,
   },
   {
-    label: "Mandatory Tests",
-    snippet:
-      "- Every new feature, endpoint, or utility function MUST include corresponding unit tests.",
+    label: "Mandatory Testing",
+    content: `### Testing Requirement
+- **Coverage**: Every new business service, calculate function, or utility MUST include corresponding unit tests.
+- **Negative Scenarios**: Tests must validate boundary edge cases and failure paths in addition to the happy path.`,
   },
 ];
 
@@ -166,7 +197,7 @@ export function RepoSettingsModal({
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Settings state
+  // Settings State
   const [profile, setProfile] = useState<string>("standard");
   const [rulebook, setRulebook] = useState<string>("");
   const [enabledAgents, setEnabledAgents] = useState<string[]>([
@@ -181,6 +212,13 @@ export function RepoSettingsModal({
   const [minConfidence, setMinConfidence] = useState<number>(75);
   const [maxFindings, setMaxFindings] = useState<number>(25);
 
+  // Editor Tab State
+  const [activeEditorTab, setActiveEditorTab] = useState<"write" | "preview">("write");
+  const [showThresholdGuide, setShowThresholdGuide] = useState(false);
+
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Load existing settings on open
   useEffect(() => {
     if (!isOpen) return;
 
@@ -223,26 +261,27 @@ export function RepoSettingsModal({
     };
   }, [isOpen, installationId, repoFullName]);
 
+  // Markdown live preview compiled HTML
+  const compiledMarkdown = useMemo(() => {
+    if (!rulebook.trim()) {
+      return "<p class='text-muted-foreground italic text-sm'>No rules defined yet. Use the Write tab or quick templates to define architectural invariants for this repository.</p>";
+    }
+    try {
+      return marked.parse(rulebook, { breaks: true }) as string;
+    } catch {
+      return "<p class='text-red-400'>Error rendering markdown preview.</p>";
+    }
+  }, [rulebook]);
+
   if (!isOpen) return null;
 
-  const handleSelectPreset = (key: "lenient" | "standard" | "strict" | "custom") => {
+  const handleSelectPreset = (key: "lenient" | "standard" | "strict") => {
     setProfile(key);
-    if (key === "lenient") {
-      setEnabledAgents(PRESETS.lenient.enabled_agents);
-      setMinSeverity(PRESETS.lenient.min_severity);
-      setMinConfidence(PRESETS.lenient.min_confidence);
-      setMaxFindings(PRESETS.lenient.max_findings);
-    } else if (key === "standard") {
-      setEnabledAgents(PRESETS.standard.enabled_agents);
-      setMinSeverity(PRESETS.standard.min_severity);
-      setMinConfidence(PRESETS.standard.min_confidence);
-      setMaxFindings(PRESETS.standard.max_findings);
-    } else if (key === "strict") {
-      setEnabledAgents(PRESETS.strict.enabled_agents);
-      setMinSeverity(PRESETS.strict.min_severity);
-      setMinConfidence(PRESETS.strict.min_confidence);
-      setMaxFindings(PRESETS.strict.max_findings);
-    }
+    const target = PRESETS[key];
+    setEnabledAgents(target.enabled_agents);
+    setMinSeverity(target.min_severity);
+    setMinConfidence(target.min_confidence);
+    setMaxFindings(target.max_findings);
   };
 
   const toggleAgent = (agentId: string) => {
@@ -252,8 +291,24 @@ export function RepoSettingsModal({
     );
   };
 
+  const insertMarkdownFormatting = (prefix: string, suffix: string = "") => {
+    const el = textareaRef.current;
+    if (!el) return;
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    const selectedText = el.value.substring(start, end) || "text";
+    const replacement = `${prefix}${selectedText}${suffix}`;
+    const newValue = el.value.substring(0, start) + replacement + el.value.substring(end);
+    setRulebook(newValue);
+    setTimeout(() => {
+      el.focus();
+      el.setSelectionRange(start + prefix.length, start + prefix.length + selectedText.length);
+    }, 10);
+  };
+
   const handleInsertTemplate = (snippet: string) => {
-    setRulebook((prev) => (prev ? `${prev.trim()}\n${snippet}` : snippet));
+    setRulebook((prev) => (prev ? `${prev.trim()}\n\n${snippet}` : snippet));
+    setActiveEditorTab("write");
   };
 
   const handleSave = async () => {
@@ -287,206 +342,257 @@ export function RepoSettingsModal({
         onClose();
       }, 700);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save settings");
+      setError(err instanceof Error ? err.message : "Failed to persist repository settings");
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto animate-in fade-in duration-200">
-      <div className="relative w-full max-w-3xl rounded-xl border border-border bg-card shadow-2xl my-6 flex flex-col max-h-[92vh] overflow-hidden text-foreground">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-border px-6 py-4 bg-muted/20">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <Sliders size={20} />
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-4 sm:p-6 overflow-y-auto animate-in fade-in duration-150">
+      <div className="relative w-full max-w-5xl rounded-xl border border-border bg-card shadow-2xl my-6 flex flex-col max-h-[92vh] overflow-hidden text-foreground">
+        
+        {/* MODAL HEADER */}
+        <div className="flex items-center justify-between border-b border-border px-8 py-5 bg-muted/20">
+          <div className="flex items-center gap-4">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-background shadow-xs text-primary">
+              <SlidersHorizontal size={20} />
             </div>
             <div>
-              <h3 className="text-base font-semibold text-foreground">
-                Review Policy & Rulebook
-              </h3>
-              <p className="text-xs text-muted-foreground font-mono">
+              <div className="flex items-center gap-2.5">
+                <h2 className="text-lg font-semibold tracking-tight text-foreground">
+                  Repository Governance & Review Policy
+                </h2>
+                <span className="rounded-full border border-border bg-muted/50 px-2.5 py-0.5 text-xs font-mono text-muted-foreground">
+                  {profile.toUpperCase()}
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground font-mono mt-0.5">
                 {repoFullName}
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="rounded-lg p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+            className="rounded-lg p-2 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+            title="Close dialog"
           >
             <X size={18} />
           </button>
         </div>
 
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+        {/* MODAL BODY */}
+        <div className="flex-1 overflow-y-auto px-8 py-6 space-y-9">
           {loading ? (
-            <div className="flex flex-col items-center justify-center py-20">
-              <Loader2 className="h-8 w-8 animate-spin text-primary mb-2" />
-              <p className="text-xs text-muted-foreground">Loading repository settings...</p>
+            <div className="flex flex-col items-center justify-center py-28">
+              <Loader2 className="h-9 w-9 animate-spin text-primary mb-3" />
+              <p className="text-sm font-medium text-muted-foreground">
+                Retrieving policy parameters for {repoFullName}…
+              </p>
             </div>
           ) : (
             <>
               {error && (
-                <div className="flex items-center gap-2.5 rounded-lg border border-red-500/30 bg-red-500/10 p-3.5 text-sm text-red-400">
-                  <AlertCircle size={16} className="shrink-0" />
+                <div className="flex items-center gap-3 rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive-foreground">
+                  <AlertCircle size={18} className="shrink-0 text-red-400" />
                   <span>{error}</span>
                 </div>
               )}
 
-              {/* SECTION 1: PROFILE PRESETS */}
-              <div>
-                <div className="flex items-center justify-between mb-2.5">
-                  <label className="text-sm font-semibold flex items-center gap-2">
-                    <Zap size={16} className="text-primary" />
-                    Review Strictness Preset
-                  </label>
-                  <span className="text-xs text-muted-foreground">
-                    Select a base policy or customize below
-                  </span>
+              {/* 1. GOVERNANCE & STRICTNESS PRESETS */}
+              <section className="space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-1 border-b border-border/60 pb-3">
+                  <div>
+                    <h3 className="text-sm font-semibold tracking-tight text-foreground flex items-center gap-2">
+                      <Layers size={16} className="text-primary" />
+                      Strictness & Governance Preset
+                    </h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Select an enterprise baseline profile or adjust individual modules below.
+                    </p>
+                  </div>
+                  {profile === "custom" && (
+                    <span className="text-xs font-medium text-primary">
+                      Custom configuration active
+                    </span>
+                  )}
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {/* Lenient Card */}
-                  <button
-                    type="button"
+                  <div
                     onClick={() => handleSelectPreset("lenient")}
-                    className={`text-left rounded-lg border p-3.5 transition-all relative ${
+                    className={`group relative flex flex-col justify-between rounded-xl border p-5 cursor-pointer transition-all ${
                       profile === "lenient"
-                        ? "border-amber-500/60 bg-amber-500/10 shadow-sm shadow-amber-500/10 ring-1 ring-amber-500/30"
-                        : "border-border bg-card/50 hover:border-border/80 hover:bg-accent/40"
+                        ? "border-primary bg-accent/40 shadow-sm ring-1 ring-primary/30"
+                        : "border-border bg-card hover:border-border/80 hover:bg-muted/30"
                     }`}
                   >
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-xs font-semibold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
-                        <Zap size={13} />
-                        Lenient
-                      </span>
-                      {profile === "lenient" && (
-                        <Check size={14} className="text-amber-400 font-bold" />
-                      )}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground group-hover:text-foreground transition-colors">
+                          {PRESETS.lenient.name}
+                        </span>
+                        {profile === "lenient" ? (
+                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                            <Check size={12} />
+                          </span>
+                        ) : (
+                          <span className="rounded bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                            {PRESETS.lenient.badge}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs font-medium text-foreground mb-1.5">
+                        {PRESETS.lenient.tagline}
+                      </p>
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        {PRESETS.lenient.description}
+                      </p>
                     </div>
-                    <p className="text-xs text-muted-foreground leading-relaxed">
-                      For internal dev & testing. Bypasses style & docs, catching only breaking bugs & security flaws.
-                    </p>
-                    <div className="mt-2.5 flex items-center gap-1.5">
-                      <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-medium text-amber-300">
-                        2 Agents
-                      </span>
-                      <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                        Min Sev: Warning
-                      </span>
+
+                    <div className="mt-4 pt-3 border-t border-border/50 flex items-center justify-between text-[11px] text-muted-foreground">
+                      <span>2 Active Modules</span>
+                      <span>Min Severity: Warning</span>
                     </div>
-                  </button>
+                  </div>
 
                   {/* Standard Card */}
-                  <button
-                    type="button"
+                  <div
                     onClick={() => handleSelectPreset("standard")}
-                    className={`text-left rounded-lg border p-3.5 transition-all relative ${
+                    className={`group relative flex flex-col justify-between rounded-xl border p-5 cursor-pointer transition-all ${
                       profile === "standard"
-                        ? "border-blue-500/60 bg-blue-500/10 shadow-sm shadow-blue-500/10 ring-1 ring-blue-500/30"
-                        : "border-border bg-card/50 hover:border-border/80 hover:bg-accent/40"
+                        ? "border-primary bg-accent/40 shadow-sm ring-1 ring-primary/30"
+                        : "border-border bg-card hover:border-border/80 hover:bg-muted/30"
                     }`}
                   >
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-xs font-semibold uppercase tracking-wider text-blue-400 flex items-center gap-1.5">
-                        <Shield size={13} />
-                        Standard
-                      </span>
-                      {profile === "standard" && (
-                        <Check size={14} className="text-blue-400 font-bold" />
-                      )}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground group-hover:text-foreground transition-colors">
+                          {PRESETS.standard.name}
+                        </span>
+                        {profile === "standard" ? (
+                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                            <Check size={12} />
+                          </span>
+                        ) : (
+                          <span className="rounded bg-primary/15 px-2 py-0.5 text-[11px] font-medium text-primary">
+                            {PRESETS.standard.badge}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs font-medium text-foreground mb-1.5">
+                        {PRESETS.standard.tagline}
+                      </p>
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        {PRESETS.standard.description}
+                      </p>
                     </div>
-                    <p className="text-xs text-muted-foreground leading-relaxed">
-                      Default balanced coverage. Runs all review specialists with standard confidence checks.
-                    </p>
-                    <div className="mt-2.5 flex items-center gap-1.5">
-                      <span className="rounded bg-blue-500/20 px-1.5 py-0.5 text-[10px] font-medium text-blue-300">
-                        All 6 Agents
-                      </span>
-                      <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                        Balanced
-                      </span>
+
+                    <div className="mt-4 pt-3 border-t border-border/50 flex items-center justify-between text-[11px] text-muted-foreground">
+                      <span>All 6 Modules</span>
+                      <span>Balanced Confidence (75%)</span>
                     </div>
-                  </button>
+                  </div>
 
                   {/* Strict Card */}
-                  <button
-                    type="button"
+                  <div
                     onClick={() => handleSelectPreset("strict")}
-                    className={`text-left rounded-lg border p-3.5 transition-all relative ${
+                    className={`group relative flex flex-col justify-between rounded-xl border p-5 cursor-pointer transition-all ${
                       profile === "strict"
-                        ? "border-purple-500/60 bg-purple-500/10 shadow-sm shadow-purple-500/10 ring-1 ring-purple-500/30"
-                        : "border-border bg-card/50 hover:border-border/80 hover:bg-accent/40"
+                        ? "border-primary bg-accent/40 shadow-sm ring-1 ring-primary/30"
+                        : "border-border bg-card hover:border-border/80 hover:bg-muted/30"
                     }`}
                   >
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-xs font-semibold uppercase tracking-wider text-purple-400 flex items-center gap-1.5">
-                        <ShieldCheck size={13} />
-                        Strict
-                      </span>
-                      {profile === "strict" && (
-                        <Check size={14} className="text-purple-400 font-bold" />
-                      )}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground group-hover:text-foreground transition-colors">
+                          {PRESETS.strict.name}
+                        </span>
+                        {profile === "strict" ? (
+                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                            <Check size={12} />
+                          </span>
+                        ) : (
+                          <span className="rounded bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                            {PRESETS.strict.badge}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs font-medium text-foreground mb-1.5">
+                        {PRESETS.strict.tagline}
+                      </p>
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        {PRESETS.strict.description}
+                      </p>
                     </div>
-                    <p className="text-xs text-muted-foreground leading-relaxed">
-                      For client & production-critical repositories. High-rigor review with mandatory test scrutiny.
-                    </p>
-                    <div className="mt-2.5 flex items-center gap-1.5">
-                      <span className="rounded bg-purple-500/20 px-1.5 py-0.5 text-[10px] font-medium text-purple-300">
-                        Zero Tolerance
-                      </span>
-                      <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                        High Assurance
-                      </span>
-                    </div>
-                  </button>
-                </div>
-              </div>
 
-              {/* SECTION 2: ACTIVE AGENT SQUAD */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-sm font-semibold flex items-center gap-2">
-                    <Shield size={16} className="text-primary" />
-                    Review Agent Squad
-                  </label>
-                  <span className="text-xs text-muted-foreground">
-                    {enabledAgents.length} of {AGENT_CATALOG.length} active
+                    <div className="mt-4 pt-3 border-t border-border/50 flex items-center justify-between text-[11px] text-muted-foreground">
+                      <span>All 6 Modules</span>
+                      <span>High Rigor (60% Cutoff)</span>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              {/* 2. SPECIALIZED INSPECTION MODULES */}
+              <section className="space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-1 border-b border-border/60 pb-3">
+                  <div>
+                    <h3 className="text-sm font-semibold tracking-tight text-foreground flex items-center gap-2">
+                      <ShieldCheck size={16} className="text-primary" />
+                      Specialized Inspection Modules
+                    </h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Enable or disable domain-specific review agents. Deactivated agents are bypassed instantly at 0 token cost.
+                    </p>
+                  </div>
+                  <span className="text-xs font-mono text-muted-foreground">
+                    {enabledAgents.length} of {AGENT_MODULES.length} active
                   </span>
                 </div>
-                <p className="text-xs text-muted-foreground mb-3">
-                  Disabled agents are skipped entirely, taking 0 seconds and consuming 0 LLM tokens.
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  {AGENT_CATALOG.map((agent) => {
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                  {AGENT_MODULES.map((agent) => {
                     const active = enabledAgents.includes(agent.id);
                     const Icon = agent.icon;
                     return (
                       <div
                         key={agent.id}
                         onClick={() => toggleAgent(agent.id)}
-                        className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer select-none transition-all ${
+                        className={`flex flex-col justify-between p-4 rounded-xl border cursor-pointer select-none transition-all ${
                           active
-                            ? "border-primary/40 bg-accent/30"
-                            : "border-border/60 bg-card/40 opacity-60 hover:opacity-85"
+                            ? "border-primary/50 bg-accent/30 shadow-xs"
+                            : "border-border/60 bg-card/40 opacity-55 hover:opacity-85"
                         }`}
                       >
-                        <input
-                          type="checkbox"
-                          checked={active}
-                          onChange={() => {}} // handled by parent div
-                          className="mt-0.5 rounded border-border text-primary focus:ring-primary h-4 w-4 shrink-0 cursor-pointer"
-                        />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5">
-                            <Icon size={14} className="text-primary shrink-0" />
-                            <span className="text-xs font-semibold text-foreground">
-                              {agent.name}
-                            </span>
+                        <div>
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <div
+                                className={`flex h-7 w-7 items-center justify-center rounded-md border ${
+                                  active
+                                    ? "border-primary/30 bg-primary/10 text-primary"
+                                    : "border-border bg-muted/50 text-muted-foreground"
+                                }`}
+                              >
+                                <Icon size={14} />
+                              </div>
+                              <span className="text-xs font-semibold text-foreground">
+                                {agent.name}
+                              </span>
+                            </div>
+                            <input
+                              type="checkbox"
+                              checked={active}
+                              onChange={() => {}}
+                              className="rounded border-border text-primary focus:ring-primary h-4 w-4 cursor-pointer"
+                            />
                           </div>
-                          <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">
+                          <span className="text-[10px] uppercase font-mono tracking-wider text-muted-foreground block mb-1">
+                            {agent.category}
+                          </span>
+                          <p className="text-xs text-muted-foreground leading-relaxed">
                             {agent.desc}
                           </p>
                         </div>
@@ -494,152 +600,350 @@ export function RepoSettingsModal({
                     );
                   })}
                 </div>
-              </div>
+              </section>
 
-              {/* SECTION 3: THRESHOLDS & GATES */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 rounded-lg border border-border/80 bg-muted/10 p-4">
-                {/* Min Severity */}
-                <div>
-                  <label className="text-xs font-semibold text-foreground block mb-1">
-                    Minimum Severity
-                  </label>
-                  <select
-                    value={minSeverity}
-                    onChange={(e) => {
-                      setProfile("custom");
-                      setMinSeverity(e.target.value);
-                    }}
-                    className="w-full rounded-md border border-border bg-card px-2.5 py-1.5 text-xs text-foreground focus:border-primary focus:outline-none"
+              {/* 3. QUALITY GATES & STRICTNESS THRESHOLDS */}
+              <section className="space-y-4">
+                <div className="flex items-center justify-between border-b border-border/60 pb-3">
+                  <div>
+                    <h3 className="text-sm font-semibold tracking-tight text-foreground flex items-center gap-2">
+                      <Filter size={16} className="text-primary" />
+                      Quality Gates & Strictness Thresholds
+                    </h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Controls filtering sensitivity, certainty verification, and maximum output boundaries.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowThresholdGuide(!showThresholdGuide)}
+                    className="flex items-center gap-1 text-xs text-primary hover:underline font-medium"
                   >
-                    <option value="info">Info (Report Everything)</option>
-                    <option value="warning">Warning (Filter Out Trivial)</option>
-                    <option value="critical">Critical (Blocker Only)</option>
-                  </select>
-                  <span className="text-[10px] text-muted-foreground mt-1 block">
-                    Findings below this level are ignored.
-                  </span>
+                    <HelpCircle size={13} />
+                    {showThresholdGuide ? "Hide Metric Guide" : "Explain Metrics"}
+                  </button>
                 </div>
 
-                {/* Min Confidence */}
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-xs font-semibold text-foreground">
-                      Min Confidence
-                    </label>
-                    <span className="text-xs font-mono font-bold text-primary">
-                      {minConfidence}%
-                    </span>
+                {/* Optional Expandable Metric Guide */}
+                {showThresholdGuide && (
+                  <div className="rounded-xl border border-border bg-muted/20 p-5 space-y-3.5 text-xs text-muted-foreground animate-in fade-in duration-150">
+                    <h4 className="font-semibold text-foreground text-xs uppercase tracking-wider">
+                      Metric Reference & Engineering Significance
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <span className="font-semibold text-foreground block mb-1">
+                          1. Minimum Severity
+                        </span>
+                        Filters out lower-severity noise. &quot;Info&quot; reports all stylistic nuances. &quot;Warning&quot; isolates bugs and code smells. &quot;Critical&quot; blocks only on fatal crashes and severe security risks.
+                      </div>
+                      <div>
+                        <span className="font-semibold text-foreground block mb-1">
+                          2. Confidence Floor (%)
+                        </span>
+                        Statistical certainty verification. Higher confidence (85%+) reports only incontrovertible flaws. Lower confidence (60%) catches elusive defects at the expense of potential false alarms.
+                      </div>
+                      <div>
+                        <span className="font-semibold text-foreground block mb-1">
+                          3. Max Findings Cap
+                        </span>
+                        Ceiling on reported findings per review. Findings are sorted by severity and confidence, and only the top N items are posted to prevent pull request fatigue.
+                      </div>
+                    </div>
                   </div>
-                  <input
-                    type="range"
-                    min="50"
-                    max="95"
-                    step="5"
-                    value={minConfidence}
-                    onChange={(e) => {
-                      setProfile("custom");
-                      setMinConfidence(Number(e.target.value));
-                    }}
-                    className="w-full h-1.5 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
-                  />
-                  <span className="text-[10px] text-muted-foreground mt-1 block">
-                    Lower confidence catches subtle issues.
-                  </span>
-                </div>
+                )}
 
-                {/* Max Findings */}
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-xs font-semibold text-foreground">
-                      Max Findings Cap
-                    </label>
-                    <span className="text-xs font-mono font-bold text-primary">
-                      {maxFindings}
-                    </span>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                  {/* Minimum Severity Card */}
+                  <div className="rounded-xl border border-border bg-card p-5 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                        <Filter size={13} className="text-primary" />
+                        Minimum Severity
+                      </label>
+                      <span className="text-[11px] font-mono text-muted-foreground uppercase">
+                        {minSeverity}
+                      </span>
+                    </div>
+
+                    <select
+                      value={minSeverity}
+                      onChange={(e) => {
+                        setProfile("custom");
+                        setMinSeverity(e.target.value);
+                      }}
+                      className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none"
+                    >
+                      <option value="info">Info (Report All Observations)</option>
+                      <option value="warning">Warning (Filter Out Trivial Notes)</option>
+                      <option value="critical">Critical (Blocker Issues Only)</option>
+                    </select>
+
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                      Findings below this severity tier are discarded prior to review publication.
+                    </p>
                   </div>
-                  <input
-                    type="number"
-                    min="5"
-                    max="100"
-                    value={maxFindings}
-                    onChange={(e) => {
-                      setProfile("custom");
-                      setMaxFindings(Number(e.target.value));
-                    }}
-                    className="w-full rounded-md border border-border bg-card px-2.5 py-1.5 text-xs text-foreground focus:border-primary focus:outline-none"
-                  />
-                  <span className="text-[10px] text-muted-foreground mt-1 block">
-                    Prevents overwhelming PR authors.
-                  </span>
-                </div>
-              </div>
 
-              {/* SECTION 4: REPOSITORY RULEBOOK */}
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-sm font-semibold flex items-center gap-2">
-                    <BookOpen size={16} className="text-primary" />
-                    Custom Repository Rulebook & Invariants
-                  </label>
-                  <span className="text-[11px] text-muted-foreground">
-                    Direct prompt injection into all agents
-                  </span>
-                </div>
-                <p className="text-xs text-muted-foreground mb-2.5">
-                  Specify architectural invariants, internal coding standards, or domain rules that
-                  the agents must enforce strictly for this repository.
-                </p>
+                  {/* Confidence Floor Card */}
+                  <div className="rounded-xl border border-border bg-card p-5 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                        <Gauge size={13} className="text-primary" />
+                        Confidence Floor
+                      </label>
+                      <span className="text-xs font-mono font-bold text-primary">
+                        {minConfidence}%
+                      </span>
+                    </div>
 
-                {/* Quick Templates */}
-                <div className="flex flex-wrap items-center gap-1.5 mb-2.5">
-                  <span className="text-[11px] text-muted-foreground mr-1 flex items-center gap-1">
-                    <Plus size={11} /> Quick rules:
+                    <input
+                      type="range"
+                      min="50"
+                      max="95"
+                      step="5"
+                      value={minConfidence}
+                      onChange={(e) => {
+                        setProfile("custom");
+                        setMinConfidence(Number(e.target.value));
+                      }}
+                      className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                    />
+
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                      Findings with statistical certainty below {minConfidence}% will be suppressed to avoid false positives.
+                    </p>
+                  </div>
+
+                  {/* Max Findings Cap Card */}
+                  <div className="rounded-xl border border-border bg-card p-5 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                        <SlidersHorizontal size={13} className="text-primary" />
+                        Max Findings Cap
+                      </label>
+                      <span className="text-xs font-mono font-bold text-primary">
+                        {maxFindings} issues
+                      </span>
+                    </div>
+
+                    <input
+                      type="number"
+                      min="5"
+                      max="100"
+                      value={maxFindings}
+                      onChange={(e) => {
+                        setProfile("custom");
+                        setMaxFindings(Number(e.target.value));
+                      }}
+                      className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs font-mono text-foreground focus:border-primary focus:outline-none"
+                    />
+
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                      Upper bound on posted comments to prevent overwhelming engineers on large pull requests.
+                    </p>
+                  </div>
+                </div>
+              </section>
+
+              {/* 4. REPOSITORY GOVERNANCE & ARCHITECTURAL RULEBOOK (MARKDOWN EDITOR) */}
+              <section className="space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-1 border-b border-border/60 pb-3">
+                  <div>
+                    <h3 className="text-sm font-semibold tracking-tight text-foreground flex items-center gap-2">
+                      <BookOpen size={16} className="text-primary" />
+                      Repository Rulebook & Architectural Invariants
+                    </h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Markdown-formatted specifications injected directly into every AI agent prompt and orchestrator decision.
+                    </p>
+                  </div>
+
+                  {/* Write vs Preview Tabs */}
+                  <div className="flex items-center rounded-lg border border-border bg-muted/40 p-0.5 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setActiveEditorTab("write")}
+                      className={`flex items-center gap-1.5 rounded-md px-3 py-1 font-medium transition-colors ${
+                        activeEditorTab === "write"
+                          ? "bg-card text-foreground shadow-xs"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <Edit3 size={13} />
+                      Write
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveEditorTab("preview")}
+                      className={`flex items-center gap-1.5 rounded-md px-3 py-1 font-medium transition-colors ${
+                        activeEditorTab === "preview"
+                          ? "bg-card text-foreground shadow-xs"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <Eye size={13} />
+                      Live Preview
+                    </button>
+                  </div>
+                </div>
+
+                {/* Quick Templates Bar */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-medium text-muted-foreground mr-1 flex items-center gap-1">
+                    <Sparkles size={12} className="text-primary" /> Standard Invariants:
                   </span>
                   {RULE_TEMPLATES.map((tmpl) => (
                     <button
                       key={tmpl.label}
                       type="button"
-                      onClick={() => handleInsertTemplate(tmpl.snippet)}
-                      className="rounded border border-border/80 bg-card px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+                      onClick={() => handleInsertTemplate(tmpl.content)}
+                      className="rounded-md border border-border bg-card px-2.5 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+                      title="Append this invariant template to your rulebook"
                     >
                       +{tmpl.label}
                     </button>
                   ))}
                 </div>
 
+                {/* Markdown Formatting Toolbar (Only in Write Mode) */}
+                {activeEditorTab === "write" && (
+                  <div className="flex flex-wrap items-center gap-1 rounded-t-xl border border-b-0 border-border bg-muted/30 px-3 py-1.5 text-xs text-muted-foreground">
+                    <button
+                      type="button"
+                      onClick={() => insertMarkdownFormatting("## ")}
+                      className="p-1 rounded hover:bg-accent hover:text-foreground"
+                      title="Heading 2"
+                    >
+                      <Heading2 size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => insertMarkdownFormatting("**", "**")}
+                      className="p-1 rounded hover:bg-accent hover:text-foreground"
+                      title="Bold"
+                    >
+                      <Bold size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => insertMarkdownFormatting("*", "*")}
+                      className="p-1 rounded hover:bg-accent hover:text-foreground"
+                      title="Italic"
+                    >
+                      <Italic size={14} />
+                    </button>
+                    <div className="h-4 w-px bg-border mx-1" />
+                    <button
+                      type="button"
+                      onClick={() => insertMarkdownFormatting("`", "`")}
+                      className="p-1 rounded hover:bg-accent hover:text-foreground"
+                      title="Inline Code"
+                    >
+                      <Code size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => insertMarkdownFormatting("```typescript\n", "\n```")}
+                      className="p-1 rounded hover:bg-accent hover:text-foreground"
+                      title="Code Block"
+                    >
+                      <span className="font-mono text-xs font-bold">&lt;/&gt;</span>
+                    </button>
+                    <div className="h-4 w-px bg-border mx-1" />
+                    <button
+                      type="button"
+                      onClick={() => insertMarkdownFormatting("- ")}
+                      className="p-1 rounded hover:bg-accent hover:text-foreground"
+                      title="Bullet List"
+                    >
+                      <List size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => insertMarkdownFormatting("1. ")}
+                      className="p-1 rounded hover:bg-accent hover:text-foreground"
+                      title="Numbered List"
+                    >
+                      <ListOrdered size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => insertMarkdownFormatting("- [ ] ")}
+                      className="p-1 rounded hover:bg-accent hover:text-foreground"
+                      title="Checklist Item"
+                    >
+                      <CheckSquare size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => insertMarkdownFormatting("> ")}
+                      className="p-1 rounded hover:bg-accent hover:text-foreground"
+                      title="Blockquote"
+                    >
+                      <Quote size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        insertMarkdownFormatting(
+                          "| Invariant | Rationale |\n|---|---|\n| Rule description | Justification |\n"
+                        )
+                      }
+                      className="p-1 rounded hover:bg-accent hover:text-foreground"
+                      title="Table"
+                    >
+                      <TableIcon size={14} />
+                    </button>
+                  </div>
+                )}
+
+                {/* Editor or Preview Pane */}
                 <div className="relative">
-                  <textarea
-                    rows={6}
-                    value={rulebook}
-                    onChange={(e) => setRulebook(e.target.value)}
-                    placeholder={`e.g.\n- All database queries MUST include tenant_id.\n- Never log PII (email, phone, credit card numbers).\n- React components must use functional components and hooks.\n- Any public API endpoint change requires backward-compatibility.`}
-                    className="w-full rounded-lg border border-border bg-card/60 p-3 text-xs font-mono text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none leading-relaxed"
-                  />
-                  <span className="absolute bottom-2.5 right-3 text-[10px] text-muted-foreground">
-                    {rulebook.length} characters
-                  </span>
+                  {activeEditorTab === "write" ? (
+                    <textarea
+                      ref={textareaRef}
+                      rows={14}
+                      value={rulebook}
+                      onChange={(e) => setRulebook(e.target.value)}
+                      placeholder={`# Repository Architectural Invariants & Review Policy\n\n## Mandatory Security Standards\n- Never log or persist PII or credentials in application logs.\n- All database transactions must enforce tenant scoping.\n\n## Code Conventions\n- React components must adhere to functional composition and hooks.\n- Public API interfaces cannot introduce breaking changes without deprecation.`}
+                      className="w-full rounded-b-xl border border-border bg-card p-4 text-xs font-mono text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none leading-relaxed min-h-[340px]"
+                    />
+                  ) : (
+                    <div className="w-full rounded-xl border border-border bg-card p-6 min-h-[340px] max-h-[480px] overflow-y-auto">
+                      <div
+                        className="markdown-preview"
+                        dangerouslySetInnerHTML={{ __html: compiledMarkdown }}
+                      />
+                    </div>
+                  )}
+                  <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
+                    <span>
+                      Markdown syntax supported (headings, tables, code blocks, checklists)
+                    </span>
+                    <span className="font-mono">{rulebook.length} characters</span>
+                  </div>
                 </div>
-              </div>
+              </section>
             </>
           )}
         </div>
 
-        {/* Footer */}
-        <div className="flex items-center justify-between border-t border-border px-6 py-3.5 bg-muted/20">
-          <div className="flex items-center gap-2">
+        {/* MODAL FOOTER */}
+        <div className="flex items-center justify-between border-t border-border px-8 py-4 bg-muted/20">
+          <div>
             {savedSuccess && (
-              <span className="flex items-center gap-1.5 text-xs text-green-400 animate-in fade-in">
-                <Check size={14} />
-                Policy updated successfully!
+              <span className="flex items-center gap-2 text-xs font-semibold text-green-500 animate-in fade-in">
+                <Check size={15} />
+                Governance policy successfully updated for {repoFullName}
               </span>
             )}
           </div>
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={onClose}
               disabled={saving}
-              className="rounded-md border border-border px-3.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition-colors disabled:opacity-50"
+              className="rounded-lg border border-border bg-card px-4 py-2 text-xs font-semibold text-muted-foreground hover:bg-accent hover:text-foreground transition-colors disabled:opacity-50"
             >
               Cancel
             </button>
@@ -647,22 +951,23 @@ export function RepoSettingsModal({
               type="button"
               onClick={handleSave}
               disabled={saving || loading}
-              className="flex items-center gap-1.5 rounded-md bg-primary px-4 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 transition-opacity disabled:opacity-50"
+              className="flex items-center gap-2 rounded-lg bg-primary px-5 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90 transition-opacity disabled:opacity-50 shadow-sm"
             >
               {saving ? (
                 <>
-                  <Loader2 size={13} className="animate-spin" />
-                  Saving...
+                  <Loader2 size={14} className="animate-spin" />
+                  Persisting Policy…
                 </>
               ) : (
                 <>
-                  <Check size={13} />
+                  <Check size={14} />
                   Save Policy
                 </>
               )}
             </button>
           </div>
         </div>
+
       </div>
     </div>
   );

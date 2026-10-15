@@ -14,7 +14,7 @@ import {
   Shield,
   ShieldCheck,
   Zap,
-  Sliders,
+  SlidersHorizontal,
   BookOpen,
 } from "lucide-react";
 import { RepoSettingsModal } from "@/components/RepoSettingsModal";
@@ -212,28 +212,28 @@ function RepoCard({ repo }: { repo: Installation }) {
     const prof = settings?.profile || "standard";
     if (prof === "lenient") {
       return (
-        <span className="inline-flex items-center gap-1 rounded-md bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 text-[11px] font-semibold text-amber-400">
-          <Zap size={11} /> Lenient (Dev)
+        <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/60 px-2.5 py-0.5 text-[11px] font-medium text-foreground">
+          <Zap size={11} className="text-amber-500" /> Rapid Dev
         </span>
       );
     }
     if (prof === "strict") {
       return (
-        <span className="inline-flex items-center gap-1 rounded-md bg-purple-500/15 border border-purple-500/30 px-2 py-0.5 text-[11px] font-semibold text-purple-400">
-          <ShieldCheck size={11} /> Strict (Client)
+        <span className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-0.5 text-[11px] font-medium text-primary">
+          <ShieldCheck size={11} /> High Assurance
         </span>
       );
     }
     if (prof === "custom") {
       return (
-        <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 text-[11px] font-semibold text-emerald-400">
-          <Sliders size={11} /> Custom
+        <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/60 px-2.5 py-0.5 text-[11px] font-medium text-foreground">
+          <SlidersHorizontal size={11} /> Custom Policy
         </span>
       );
     }
     return (
-      <span className="inline-flex items-center gap-1 rounded-md bg-blue-500/15 border border-blue-500/30 px-2 py-0.5 text-[11px] font-semibold text-blue-400">
-        <Shield size={11} /> Standard
+      <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/60 px-2.5 py-0.5 text-[11px] font-medium text-foreground">
+        <Shield size={11} className="text-muted-foreground" /> Standard
       </span>
     );
   };
@@ -274,10 +274,10 @@ function RepoCard({ repo }: { repo: Installation }) {
           <div className="flex items-center justify-between text-xs">
             <span className="text-muted-foreground flex items-center gap-1.5">
               <Clock size={12} className="text-muted-foreground" />
-              Squad active:
+              Active Modules:
             </span>
             <span className="font-medium text-foreground">
-              {settings ? `${settings.enabled_agents?.length ?? 6} of 6 agents` : "6 of 6 agents"}
+              {settings ? `${settings.enabled_agents?.length ?? 6} of 6 modules` : "6 of 6 modules"}
             </span>
           </div>
 
@@ -288,7 +288,7 @@ function RepoCard({ repo }: { repo: Installation }) {
             </span>
             {settings?.rulebook?.trim() ? (
               <span className="inline-flex items-center gap-1 text-[11px] font-medium text-primary">
-                Configured ({settings.rulebook.trim().split("\n").length} rules)
+                Configured ({settings.rulebook.trim().split("\n").length} lines)
               </span>
             ) : (
               <span className="text-[11px] text-muted-foreground">Default invariants</span>
@@ -309,7 +309,7 @@ function RepoCard({ repo }: { repo: Installation }) {
               className="flex items-center gap-1.5 rounded-md border border-border bg-accent/40 px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-accent hover:border-border/80"
               title="Configure strictness profile, enabled agents, and custom rulebook"
             >
-              <Sliders size={12} className="text-primary" />
+              <SlidersHorizontal size={12} className="text-primary" />
               Policy & Rules
             </button>
             <button
