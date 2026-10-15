@@ -60,6 +60,39 @@ class InstallationSettings(Base):
 
 
 
+class RepositorySettings(Base):
+    __tablename__ = "repository_settings"
+    __table_args__ = (
+        UniqueConstraint("installation_id", "repo_full_name", name="uq_repo_settings"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    installation_id = Column(BigInteger, nullable=False, index=True)
+    repo_full_name = Column(String(255), nullable=False, index=True)
+    profile = Column(String(20), nullable=False, default="standard")
+    rulebook = Column(Text, nullable=False, default="")
+    enabled_agents = Column(
+        JSONB,
+        default=lambda: [
+            "security",
+            "bugs",
+            "error_handling",
+            "style",
+            "test_coverage",
+            "comment_accuracy",
+        ],
+    )
+    min_severity = Column(String(20), nullable=False, default="info")
+    min_confidence = Column(Integer, nullable=False, default=75)
+    max_findings = Column(Integer, nullable=False, default=25)
+    ignore_paths = Column(JSONB, default=list)
+    critical_paths = Column(JSONB, default=list)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+
+
 class Review(Base):
     __tablename__ = "reviews"
     __table_args__ = (

@@ -58,6 +58,25 @@ export interface Installation {
   config: Record<string, unknown>;
 }
 
+export interface RepoSettings {
+  profile: "lenient" | "standard" | "strict" | "custom" | string;
+  rulebook: string;
+  enabled_agents: string[];
+  min_severity: "info" | "warning" | "critical" | string;
+  min_confidence: number;
+  max_findings: number;
+  ignore_paths: string[];
+  critical_paths: string[];
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface RepoSettingsResponse {
+  installation_id: number;
+  repo_full_name: string;
+  settings: RepoSettings;
+}
+
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const url = `${API_URL}${path}`;
   let res: Response;
@@ -139,4 +158,22 @@ export const api = {
       `/api/analytics/${installationId}/dispositions${qs ? `?${qs}` : ""}`
     );
   },
+
+  getRepoSettings: (installationId: number, repoFullName: string) =>
+    apiFetch<RepoSettingsResponse>(
+      `/api/installations/${installationId}/repos/${encodeURIComponent(repoFullName)}/settings`
+    ),
+
+  updateRepoSettings: (
+    installationId: number,
+    repoFullName: string,
+    body: Partial<RepoSettings>
+  ) =>
+    apiFetch<{ status: string; repo_full_name: string }>(
+      `/api/installations/${installationId}/repos/${encodeURIComponent(repoFullName)}/settings`,
+      {
+        method: "PUT",
+        body: JSON.stringify(body),
+      }
+    ),
 };

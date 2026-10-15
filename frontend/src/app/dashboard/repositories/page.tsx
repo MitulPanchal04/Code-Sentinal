@@ -2,8 +2,22 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { api } from "@/lib/api";
-import type { Installation } from "@/lib/api";
-import { Loader2, RefreshCw, AlertTriangle, Search, ExternalLink, GitBranch, Clock } from "lucide-react";
+import type { Installation, RepoSettings } from "@/lib/api";
+import {
+  Loader2,
+  RefreshCw,
+  AlertTriangle,
+  Search,
+  ExternalLink,
+  GitBranch,
+  Clock,
+  Shield,
+  ShieldCheck,
+  Zap,
+  Sliders,
+  BookOpen,
+} from "lucide-react";
+import { RepoSettingsModal } from "@/components/RepoSettingsModal";
 
 export default function RepositoriesPage() {
   const [installations, setInstallations] = useState<Installation[]>([]);
@@ -160,6 +174,22 @@ function RepoCard({ repo }: { repo: Installation }) {
   const githubUrl = `https://github.com/${repo.repo_full_name}`;
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const [settings, setSettings] = useState<RepoSettings | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    api
+      .getRepoSettings(repo.installation_id, repo.repo_full_name)
+      .then((res) => {
+        if (mounted) setSettings(res.settings);
+      })
+      .catch(() => {});
+
+    return () => {
+      mounted = false;
+    };
+  }, [repo.installation_id, repo.repo_full_name]);
 
   const handleSync = async () => {
     setSyncing(true);
@@ -178,59 +208,134 @@ function RepoCard({ repo }: { repo: Installation }) {
     }
   };
 
+  const renderProfileBadge = () => {
+    const prof = settings?.profile || "standard";
+    if (prof === "lenient") {
+      return (
+        <span className="inline-flex items-center gap-1 rounded-md bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 text-[11px] font-semibold text-amber-400">
+          <Zap size={11} /> Lenient (Dev)
+        </span>
+      );
+    }
+    if (prof === "strict") {
+      return (
+        <span className="inline-flex items-center gap-1 rounded-md bg-purple-500/15 border border-purple-500/30 px-2 py-0.5 text-[11px] font-semibold text-purple-400">
+          <ShieldCheck size={11} /> Strict (Client)
+        </span>
+      );
+    }
+    if (prof === "custom") {
+      return (
+        <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 text-[11px] font-semibold text-emerald-400">
+          <Sliders size={11} /> Custom
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1 rounded-md bg-blue-500/15 border border-blue-500/30 px-2 py-0.5 text-[11px] font-semibold text-blue-400">
+        <Shield size={11} /> Standard
+      </span>
+    );
+  };
+
   return (
-    <div className="rounded-lg border border-border bg-card p-5 transition-colors hover:border-primary/50">
-      <div className="mb-3 flex items-start justify-between">
-        <div className="min-w-0">
-          <a
-            href={githubUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="group flex items-center gap-1.5 text-sm font-medium transition-colors hover:text-primary"
-          >
-            {repo.repo_full_name}
-            <ExternalLink
-              size={11}
-              className="text-muted-foreground transition-colors group-hover:text-primary"
-            />
-          </a>
-          <div className="mt-1 flex items-center gap-2">
-            {repo.model_id && (
-              <span className="text-xs text-muted-foreground">{repo.model_id}</span>
-            )}
-            <span className="text-xs text-muted-foreground">
-              Installation #{repo.installation_id}
+    <div className="flex flex-col justify-between rounded-lg border border-border bg-card p-5 transition-all hover:border-primary/50 shadow-sm">
+      <div>
+        <div className="mb-3 flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <a
+              href={githubUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="group inline-flex items-center gap-1.5 text-sm font-semibold text-foreground transition-colors hover:text-primary"
+            >
+              <span className="truncate">{repo.repo_full_name}</span>
+              <ExternalLink
+                size={11}
+                className="text-muted-foreground transition-colors group-hover:text-primary shrink-0"
+              />
+            </a>
+            <div className="mt-1 flex items-center gap-2">
+              {repo.model_id && (
+                <span className="text-xs text-muted-foreground">{repo.model_id}</span>
+              )}
+              <span className="text-xs text-muted-foreground">
+                Installation #{repo.installation_id}
+              </span>
+            </div>
+          </div>
+          <div className="shrink-0">{renderProfileBadge()}</div>
+        </div>
+
+        <div className="mb-3 border-t border-border/50" />
+
+        {/* Squad & Rulebook Details */}
+        <div className="space-y-1.5 py-1">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-muted-foreground flex items-center gap-1.5">
+              <Clock size={12} className="text-muted-foreground" />
+              Squad active:
             </span>
+            <span className="font-medium text-foreground">
+              {settings ? `${settings.enabled_agents?.length ?? 6} of 6 agents` : "6 of 6 agents"}
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-muted-foreground flex items-center gap-1.5">
+              <BookOpen size={12} className="text-muted-foreground" />
+              Rulebook:
+            </span>
+            {settings?.rulebook?.trim() ? (
+              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-primary">
+                Configured ({settings.rulebook.trim().split("\n").length} rules)
+              </span>
+            ) : (
+              <span className="text-[11px] text-muted-foreground">Default invariants</span>
+            )}
           </div>
         </div>
       </div>
 
-      <div className="mb-3 border-t border-border/50" />
-
-      <div className="flex items-center gap-2 py-1">
-        <Clock size={13} className="text-muted-foreground" />
-        <span className="text-xs text-muted-foreground">
-          Connected and ready for reviews.
-        </span>
-      </div>
-
-      <div className="mt-2 flex items-center justify-between">
-        <div className="flex items-center gap-1.5">
-          <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-          <span className="text-xs text-green-500">Active</span>
+      <div className="mt-4 pt-3 border-t border-border/40">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5">
+            <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+            <span className="text-xs text-green-500 font-medium">Active</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setModalOpen(true)}
+              className="flex items-center gap-1.5 rounded-md border border-border bg-accent/40 px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-accent hover:border-border/80"
+              title="Configure strictness profile, enabled agents, and custom rulebook"
+            >
+              <Sliders size={12} className="text-primary" />
+              Policy & Rules
+            </button>
+            <button
+              onClick={handleSync}
+              disabled={syncing}
+              className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent disabled:opacity-50"
+              title="Sync existing open PRs for this installation"
+            >
+              <RefreshCw size={12} className={syncing ? "animate-spin" : ""} />
+              {syncing ? "Syncing…" : "Sync"}
+            </button>
+          </div>
         </div>
-        <button
-          onClick={handleSync}
-          disabled={syncing}
-          className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent disabled:opacity-50"
-          title="Sync existing open PRs for this installation"
-        >
-          <RefreshCw size={12} className={syncing ? "animate-spin" : ""} />
-          {syncing ? "Syncing…" : "Sync PRs"}
-        </button>
+        {syncMsg && (
+          <p className="mt-2 text-xs text-muted-foreground">{syncMsg}</p>
+        )}
       </div>
-      {syncMsg && (
-        <p className="mt-2 text-xs text-muted-foreground">{syncMsg}</p>
+
+      {modalOpen && (
+        <RepoSettingsModal
+          installationId={repo.installation_id}
+          repoFullName={repo.repo_full_name}
+          isOpen={modalOpen}
+          onClose={() => setModalOpen(false)}
+          onSaved={(newSettings) => setSettings(newSettings)}
+        />
       )}
     </div>
   );

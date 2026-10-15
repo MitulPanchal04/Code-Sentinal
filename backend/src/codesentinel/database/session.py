@@ -97,8 +97,37 @@ async def init_db() -> bool:
                         f"ADD COLUMN IF NOT EXISTS {column} {ddl}"
                     )
                 )
+
+            # Repository settings table (mirrors alembic revision 0003)
+            await conn.execute(
+                text("""
+                    CREATE TABLE IF NOT EXISTS repository_settings (
+                        id SERIAL PRIMARY KEY,
+                        installation_id BIGINT NOT NULL,
+                        repo_full_name VARCHAR(255) NOT NULL,
+                        profile VARCHAR(20) NOT NULL DEFAULT 'standard',
+                        rulebook TEXT NOT NULL DEFAULT '',
+                        enabled_agents JSONB NOT NULL DEFAULT '["security", "bugs", "error_handling", "style", "test_coverage", "comment_accuracy"]'::jsonb,
+                        min_severity VARCHAR(20) NOT NULL DEFAULT 'info',
+                        min_confidence INTEGER NOT NULL DEFAULT 75,
+                        max_findings INTEGER NOT NULL DEFAULT 25,
+                        ignore_paths JSONB NOT NULL DEFAULT '[]'::jsonb,
+                        critical_paths JSONB NOT NULL DEFAULT '[]'::jsonb,
+                        created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW(),
+                        updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW(),
+                        CONSTRAINT uq_repo_settings UNIQUE (installation_id, repo_full_name)
+                    )
+                """)
+            )
+            await conn.execute(
+                text("""
+                    CREATE INDEX IF NOT EXISTS ix_repo_settings_install_repo
+                    ON repository_settings (installation_id, repo_full_name)
+                """)
+            )
         logger.info("database_initialized")
         return True
+
     except Exception as e:
         logger.warning("database_unavailable", error=str(e))
         return False

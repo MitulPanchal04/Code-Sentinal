@@ -12,8 +12,14 @@ from structlog import get_logger
 
 from codesentinel.agents.pipeline import run_review
 from codesentinel.config.settings import get_settings
-from codesentinel.database.models import Review, ReviewJob, utcnow
+from codesentinel.database.models import (
+    RepositorySettings,
+    Review,
+    ReviewJob,
+    utcnow,
+)
 from codesentinel.database.session import async_session_factory
+
 from codesentinel.github.auth import get_github_auth
 from codesentinel.github.client import GitHubClient
 from codesentinel.github.sync import (
@@ -239,8 +245,37 @@ async def process_review_job(job: ReviewJob) -> None:
         "base_branch": payload.get("pr_base_ref"),
     }
 
+    # Fetch UI-configured repository rulebook and strictness profile
+    repo_settings_dict = None
     try:
-        # Run the LangGraph review pipeline
+        async with async_session_factory() as session:
+            rs_res = await session.execute(
+                select(RepositorySettings).where(
+                    RepositorySettings.installation_id == installation_id,
+                    RepositorySettings.repo_full_name == repo_full_name,
+                )
+            )
+            rs = rs_res.scalar_one_or_none()
+            if rs:
+                repo_settings_dict = {
+                    "profile": rs.profile,
+                    "rulebook": rs.rulebook,
+                    "enabled_agents": rs.enabled_agents,
+                    "min_severity": rs.min_severity,
+                    "min_confidence": rs.min_confidence,
+                    "max_findings": rs.max_findings,
+                    "ignore_paths": rs.ignore_paths,
+                    "critical_paths": rs.critical_paths,
+                }
+    except Exception as e:
+        logger.warning(
+            "fetch_repo_settings_failed",
+            repo=repo_full_name,
+            error=str(e),
+        )
+
+    try:
+        # Run the LangGraph review pipeline with repository-specific settings
         result = await run_review(
             github_client=gc,
             owner=owner,
@@ -251,7 +286,9 @@ async def process_review_job(job: ReviewJob) -> None:
             pr_body=payload.get("pr_body", ""),
             review_mode=review_mode,
             on_node_complete=_on_step,
+            repo_settings=repo_settings_dict,
         )
+
 
         findings = result.get("final_findings", [])
         summary = result.get("summary", "")

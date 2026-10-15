@@ -10,8 +10,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from structlog import get_logger
 
 from codesentinel.api.deps import get_github_user_id, get_github_access_token
-from codesentinel.database.models import Installation, InstallationSettings, Review
+from codesentinel.database.models import (
+    Installation,
+    InstallationSettings,
+    RepositorySettings,
+    Review,
+)
 from codesentinel.database.session import get_db
+
 from codesentinel.github.sync import enqueue_pr_sync
 
 router = APIRouter(prefix="/api/installations", tags=["installations"])
@@ -315,3 +321,101 @@ async def update_settings(
 
     await db.commit()
     return {"status": "updated"}
+
+
+@router.get("/{installation_id}/repos/{repo_full_name:path}/settings")
+async def get_repo_settings(
+    installation_id: int,
+    repo_full_name: str,
+    db: AsyncSession = Depends(get_db),
+    github_user_id: int | None = Depends(get_github_user_id),
+) -> dict[str, Any]:
+    """Get repository settings and rulebook, scoped to the authenticated user."""
+    await _require_installation_owner(db, installation_id, github_user_id)
+    result = await db.execute(
+        select(RepositorySettings).where(
+            RepositorySettings.installation_id == installation_id,
+            RepositorySettings.repo_full_name == repo_full_name,
+        )
+    )
+    settings = result.scalar_one_or_none()
+    if not settings:
+        return {
+            "installation_id": installation_id,
+            "repo_full_name": repo_full_name,
+            "settings": {
+                "profile": "standard",
+                "rulebook": "",
+                "enabled_agents": [
+                    "security",
+                    "bugs",
+                    "error_handling",
+                    "style",
+                    "test_coverage",
+                    "comment_accuracy",
+                ],
+                "min_severity": "info",
+                "min_confidence": 75,
+                "max_findings": 25,
+                "ignore_paths": [],
+                "critical_paths": [],
+            },
+        }
+    return {
+        "installation_id": installation_id,
+        "repo_full_name": repo_full_name,
+        "settings": {
+            "profile": settings.profile,
+            "rulebook": settings.rulebook,
+            "enabled_agents": settings.enabled_agents,
+            "min_severity": settings.min_severity,
+            "min_confidence": settings.min_confidence,
+            "max_findings": settings.max_findings,
+            "ignore_paths": settings.ignore_paths,
+            "critical_paths": settings.critical_paths,
+            "created_at": settings.created_at.isoformat() if settings.created_at else None,
+            "updated_at": settings.updated_at.isoformat() if settings.updated_at else None,
+        },
+    }
+
+
+@router.put("/{installation_id}/repos/{repo_full_name:path}/settings")
+async def update_repo_settings(
+    installation_id: int,
+    repo_full_name: str,
+    body: dict[str, Any],
+    db: AsyncSession = Depends(get_db),
+    github_user_id: int | None = Depends(get_github_user_id),
+) -> dict[str, Any]:
+    """Update repository settings and rulebook, scoped to the authenticated user."""
+    await _require_installation_owner(db, installation_id, github_user_id)
+    result = await db.execute(
+        select(RepositorySettings).where(
+            RepositorySettings.installation_id == installation_id,
+            RepositorySettings.repo_full_name == repo_full_name,
+        )
+    )
+    settings = result.scalar_one_or_none()
+    if not settings:
+        settings = RepositorySettings(
+            installation_id=installation_id,
+            repo_full_name=repo_full_name,
+        )
+        db.add(settings)
+
+    for key in [
+        "profile",
+        "rulebook",
+        "enabled_agents",
+        "min_severity",
+        "min_confidence",
+        "max_findings",
+        "ignore_paths",
+        "critical_paths",
+    ]:
+        if key in body:
+            setattr(settings, key, body[key])
+
+    await db.commit()
+    return {"status": "updated", "repo_full_name": repo_full_name}
+

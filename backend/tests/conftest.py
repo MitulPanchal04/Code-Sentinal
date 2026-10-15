@@ -14,7 +14,12 @@ from sqlalchemy.sql import operators
 from sqlalchemy.sql.dml import Delete
 from sqlalchemy.sql.elements import BinaryExpression, BooleanClauseList
 
-from codesentinel.database.models import Installation, Review, ReviewJob
+from codesentinel.database.models import (
+    Installation,
+    RepositorySettings,
+    Review,
+    ReviewJob,
+)
 
 
 class Store:
@@ -24,12 +29,14 @@ class Store:
         self.reviews: list[Review] = []
         self.installations: list[Installation] = []
         self.jobs: list[ReviewJob] = []
+        self.repo_settings: list[RepositorySettings] = []
 
     def store_for_entity(self, entity: Any) -> list:
         return {
             Review: self.reviews,
             Installation: self.installations,
             ReviewJob: self.jobs,
+            RepositorySettings: self.repo_settings,
         }[entity]
 
     def store_for_table(self, table_name: str) -> list:
@@ -37,7 +44,9 @@ class Store:
             "reviews": self.reviews,
             "installations": self.installations,
             "review_jobs": self.jobs,
+            "repository_settings": self.repo_settings,
         }[table_name]
+
 
 
 def _where_criteria(stmt: Any) -> list:
