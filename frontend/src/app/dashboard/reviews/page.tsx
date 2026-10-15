@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { formatDate, scoreColor, reviewStatusBadge, reviewStatusLabel, prStateBadge } from "@/lib/utils";
-import { Loader2, RefreshCw, AlertTriangle, GitPullRequest } from "lucide-react";
+import { Loader2, RefreshCw, AlertTriangle, GitPullRequest, RotateCcw, CheckCircle2 } from "lucide-react";
 import { useSearchParams, useRouter } from "next/navigation";
 
 export default function ReviewsPage() {
@@ -17,6 +17,8 @@ export default function ReviewsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [retryingId, setRetryingId] = useState<number | null>(null);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
   const statusFilter = searchParams.get("status") || "";
   const repoFilter = searchParams.get("repo") || "";
 
@@ -44,6 +46,37 @@ export default function ReviewsPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Auto-poll when any review is in progress
+  useEffect(() => {
+    const hasPending = reviews.some((r) => r.status === "pending");
+    if (!hasPending) return;
+    const timer = setInterval(() => {
+      fetchData(true);
+    }, 4000);
+    return () => clearInterval(timer);
+  }, [reviews, fetchData]);
+
+  const handleRetry = async (reviewId: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setRetryingId(reviewId);
+    setActionMessage(null);
+    try {
+      await api.retryReview(reviewId);
+      setReviews((prev) =>
+        prev.map((r) =>
+          r.id === reviewId ? { ...r, status: "pending", error_message: null } : r
+        )
+      );
+      setActionMessage(`Review #${reviewId} queued for analysis.`);
+      setTimeout(() => setActionMessage(null), 5000);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(`Failed to retry review #${reviewId}: ${msg}`);
+    } finally {
+      setRetryingId(null);
+    }
+  };
 
   const handleStatusChange = (value: string) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -135,6 +168,13 @@ export default function ReviewsPage() {
         </div>
       )}
 
+      {actionMessage && (
+        <div className="flex items-center gap-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4">
+          <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+          <p className="text-sm text-emerald-500">{actionMessage}</p>
+        </div>
+      )}
+
       <div className="rounded-lg border border-border bg-card">
         {reviews.length === 0 ? (
           <div className="px-6 py-12 text-center">
@@ -156,6 +196,7 @@ export default function ReviewsPage() {
                 <th className="px-6 py-3 font-medium">Tokens</th>
                 <th className="px-6 py-3 font-medium">Status</th>
                 <th className="px-6 py-3 font-medium">Date</th>
+                <th className="px-6 py-3 font-medium text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -217,6 +258,37 @@ export default function ReviewsPage() {
                   </td>
                   <td className="px-6 py-4 text-sm text-muted-foreground">
                     {formatDate(review.pr_created_at || review.created_at)}
+                  </td>
+                  <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      onClick={(e) => handleRetry(review.id, e)}
+                      disabled={retryingId === review.id || review.status === "pending"}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+                      title={
+                        review.status === "failed"
+                          ? "Retry failed review"
+                          : review.status === "not_reviewed"
+                          ? "Run review now"
+                          : "Re-run review"
+                      }
+                    >
+                      <RotateCcw
+                        className={`h-3 w-3 ${
+                          retryingId === review.id || review.status === "pending"
+                            ? "animate-spin"
+                            : ""
+                        }`}
+                      />
+                      {retryingId === review.id
+                        ? "Queuing…"
+                        : review.status === "pending"
+                        ? "Running…"
+                        : review.status === "failed"
+                        ? "Retry"
+                        : review.status === "not_reviewed"
+                        ? "Run"
+                        : "Re-run"}
+                    </button>
                   </td>
                 </tr>
               ))}

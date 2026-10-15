@@ -97,6 +97,12 @@ export const api = {
   getReviewByKey: (repo: string, pr: number, sha: string) =>
     apiFetch<Review>(`/api/reviews/by-key/${encodeURIComponent(repo)}/${pr}/${sha}`),
 
+  retryReview: (id: number) =>
+    apiFetch<{ status: string; message: string; review: Review }>(
+      `/api/reviews/${id}/retry`,
+      { method: "POST" }
+    ),
+
   listInstallations: () =>
     apiFetch<{ installations: Installation[] }>("/api/installations"),
 

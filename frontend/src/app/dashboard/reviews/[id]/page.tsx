@@ -2,8 +2,25 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { formatDate, severityColor, scoreColor } from "@/lib/utils";
-import { ArrowLeft, GitBranch, DollarSign, Zap, Loader2, AlertTriangle, ExternalLink, GitPullRequest } from "lucide-react";
+import {
+  formatDate,
+  severityColor,
+  scoreColor,
+  reviewStatusBadge,
+  reviewStatusLabel,
+} from "@/lib/utils";
+import {
+  ArrowLeft,
+  GitBranch,
+  DollarSign,
+  Zap,
+  Loader2,
+  AlertTriangle,
+  ExternalLink,
+  GitPullRequest,
+  RotateCcw,
+  CheckCircle2,
+} from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
@@ -13,6 +30,8 @@ export default function ReviewDetailPage() {
   const [review, setReview] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
+  const [retryMessage, setRetryMessage] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchReview() {
@@ -37,6 +56,49 @@ export default function ReviewDetailPage() {
     }
     fetchReview();
   }, [id]);
+
+  // Auto-poll when review is in progress
+  useEffect(() => {
+    if (!review?.id || review.status !== "pending") return;
+    const interval = setInterval(async () => {
+      try {
+        const updated = await api.getReview(review.id);
+        if (updated.status !== "pending") {
+          setReview(updated);
+          if (updated.status === "complete") {
+            setRetryMessage("Review completed successfully!");
+            setTimeout(() => setRetryMessage(null), 5000);
+          } else if (updated.status === "failed") {
+            setRetryMessage(null);
+          }
+        }
+      } catch {
+        // silent polling error
+      }
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [review?.status, review?.id]);
+
+  const handleRetry = async () => {
+    if (!review?.id) return;
+    setRetrying(true);
+    setRetryMessage(null);
+    try {
+      const res = await api.retryReview(review.id);
+      setReview((prev: any) => ({
+        ...prev,
+        ...res.review,
+        status: "pending",
+        error_message: null,
+      }));
+      setRetryMessage("Review queued for re-run. Analyzing pull request…");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(`Failed to retry review: ${msg}`);
+    } finally {
+      setRetrying(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -78,12 +140,40 @@ export default function ReviewDetailPage() {
         Back to reviews
       </Link>
 
+      {retryMessage && (
+        <div className="flex items-center gap-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4">
+          <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+          <p className="text-sm text-emerald-500">{retryMessage}</p>
+        </div>
+      )}
+
+      {review.status === "pending" && (
+        <div className="flex items-center gap-3 rounded-lg border border-blue-500/30 bg-blue-500/10 p-4">
+          <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
+          <div className="flex-1">
+            <p className="text-sm font-medium text-blue-500">Review in progress</p>
+            <p className="text-xs text-blue-500/80">
+              The AI review is analyzing this pull request. Results will update automatically.
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="rounded-lg border border-border bg-card p-6">
         <div className="flex items-start justify-between">
           <div>
-            <h2 className="text-xl font-semibold">
-              {review.repo_full_name}#{review.pr_number}
-            </h2>
+            <div className="flex items-center gap-3">
+              <h2 className="text-xl font-semibold">
+                {review.repo_full_name}#{review.pr_number}
+              </h2>
+              <span
+                className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${reviewStatusBadge(
+                  review.status
+                )}`}
+              >
+                {reviewStatusLabel(review.status)}
+              </span>
+            </div>
             {review.pr_title && (
               <p className="mt-1 text-sm font-medium">{review.pr_title}</p>
             )}
@@ -101,6 +191,33 @@ export default function ReviewDetailPage() {
             )}
           </div>
           <div className="flex items-center gap-4">
+            <button
+              onClick={handleRetry}
+              disabled={retrying || review.status === "pending"}
+              className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+              title={
+                review.status === "failed"
+                  ? "Retry failed review"
+                  : review.status === "not_reviewed"
+                  ? "Run review now"
+                  : "Re-run review"
+              }
+            >
+              <RotateCcw
+                className={`h-4 w-4 ${
+                  retrying || review.status === "pending" ? "animate-spin" : ""
+                }`}
+              />
+              {retrying
+                ? "Queuing…"
+                : review.status === "pending"
+                ? "Running…"
+                : review.status === "failed"
+                ? "Retry Review"
+                : review.status === "not_reviewed"
+                ? "Run Review"
+                : "Re-run Review"}
+            </button>
             <div
               className={`flex h-16 w-16 items-center justify-center rounded-full text-2xl font-bold ${scoreColor(
                 review.merge_score || 0
@@ -149,10 +266,21 @@ export default function ReviewDetailPage() {
             <p className="text-sm font-medium">Not reviewed yet</p>
             <p className="text-xs text-muted-foreground">
               This open PR was synced from GitHub but no AI review has run.
-              Comment <code>@codesentinel review</code> on the PR or push new
-              commits to trigger one.
+              Click &quot;Run Review Now&quot; to start analysis.
             </p>
           </div>
+          <button
+            onClick={handleRetry}
+            disabled={retrying || review.status === "pending"}
+            className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm transition-colors hover:bg-accent disabled:opacity-50"
+          >
+            <RotateCcw
+              className={`h-3.5 w-3.5 ${
+                retrying || review.status === "pending" ? "animate-spin" : ""
+              }`}
+            />
+            {retrying ? "Starting…" : "Run Review Now"}
+          </button>
           {review.pr_url && (
             <a
               href={review.pr_url}
@@ -254,10 +382,22 @@ export default function ReviewDetailPage() {
 
       {review.error_message && (
         <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-6">
-          <h3 className="text-lg font-semibold text-destructive">Error</h3>
-          <p className="mt-2 text-sm text-destructive">
-            {review.error_message}
-          </p>
+          <div className="flex items-start justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-destructive">Review Failed</h3>
+              <p className="mt-2 text-sm text-destructive">
+                {review.error_message}
+              </p>
+            </div>
+            <button
+              onClick={handleRetry}
+              disabled={retrying || review.status === "pending"}
+              className="flex items-center gap-2 rounded-md bg-destructive px-3 py-1.5 text-sm font-medium text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50"
+            >
+              <RotateCcw className={`h-4 w-4 ${retrying ? "animate-spin" : ""}`} />
+              {retrying ? "Retrying…" : "Retry Review"}
+            </button>
+          </div>
         </div>
       )}
     </div>
