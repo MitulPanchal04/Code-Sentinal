@@ -2,21 +2,26 @@
 
 from typing import Any
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func, desc
+from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-
 from structlog import get_logger
 
 from codesentinel.api.deps import get_github_user_id
-from codesentinel.database.models import Review, Installation, ReviewJob
+from codesentinel.database.models import Installation, Review, ReviewJob
 from codesentinel.database.session import get_db
 from codesentinel.github.auth import get_github_auth
 from codesentinel.github.client import GitHubClient
+from codesentinel.github.sync import JOB_TYPE_SYNC_PRS, pr_state_of
+from codesentinel.github.webhook import request_pr_review
 
 logger = get_logger()
 
 router = APIRouter(prefix="/api/reviews", tags=["reviews"])
+
+# Review rows that already have an AI review queued or in-flight.
+_IN_FLIGHT_REVIEW_STATUSES = ("pending", "running")
 
 
 @router.get("")
@@ -124,91 +129,118 @@ async def retry_review(
     db: AsyncSession = Depends(get_db),
     github_user_id: int | None = Depends(get_github_user_id),
 ) -> dict[str, Any]:
-    """Manually re-run/retry a review, scoped to the authenticated user."""
+    """Manually request (or re-run) an AI review for a single pull request.
+
+    Validates ownership and repo access, rejects duplicate/in-flight reviews,
+    refreshes the PR state and head SHA from GitHub, then enqueues a
+    ReviewJob for the background worker — the review itself runs via the
+    existing pipeline. Reviews only start on explicit user action.
+    """
     if github_user_id is None:
         raise HTTPException(status_code=401, detail="Authentication required")
 
+    # Lock the row so concurrent clicks can't double-enqueue.
     result = await db.execute(
-        select(Review)
-        .join(Installation, Review.installation_id == Installation.installation_id)
-        .where(
-            Review.id == review_id,
-            Installation.github_user_id == github_user_id,
-        )
+        select(Review).where(Review.id == review_id).with_for_update()
     )
     review = result.scalar_one_or_none()
     if not review:
-        raise HTTPException(status_code=404, detail="Review not found")
+        raise HTTPException(status_code=404, detail="Pull request not found")
 
-    # Reset review state to pending and clear old error
-    review.status = "pending"
-    review.error_message = None
-
-    # Optionally create/queue a check run on GitHub
-    check_run_id = None
-    try:
-        owner, repo_name = review.repo_full_name.split("/")
-        auth = get_github_auth()
-        gc = GitHubClient(auth, review.installation_id)
-        new_check = await gc.create_check_run(
-            owner,
-            repo_name,
-            {
-                "name": "CodeSentinel Review",
-                "head_sha": review.commit_sha,
-                "status": "queued",
-                "output": {
-                    "title": "Review queued (manual retry)",
-                    "summary": f"CodeSentinel manual re-review for PR #{review.pr_number} has been queued.",
-                },
-            },
+    # The repo must belong to an installation owned by this user.
+    inst = await db.execute(
+        select(Installation.id)
+        .where(
+            Installation.installation_id == review.installation_id,
+            Installation.repo_full_name == review.repo_full_name,
+            Installation.github_user_id == github_user_id,
         )
-        check_run_id = new_check.get("id")
-    except Exception as e:
-        logger.warning(
-            "retry_check_run_create_failed",
-            error=str(e),
-            review_id=review.id,
-            repo=review.repo_full_name,
-        )
-
-    job_payload = {
-        "installation_id": review.installation_id,
-        "repo_full_name": review.repo_full_name,
-        "pr_number": review.pr_number,
-        "commit_sha": review.commit_sha,
-        "pr_title": review.pr_title or "",
-        "pr_url": review.pr_url or "",
-        "pr_head_ref": review.head_branch or "",
-        "pr_base_ref": review.base_branch or "",
-        "review_mode": "review",
-        "author": review.author or "",
-        "check_run_id": check_run_id,
-    }
-
-    job = ReviewJob(
-        installation_id=review.installation_id,
-        repo_full_name=review.repo_full_name,
-        pr_number=review.pr_number,
-        commit_sha=review.commit_sha,
-        payload=job_payload,
-        status="queued",
+        .limit(1)
     )
-    db.add(job)
+    if not inst.scalar():
+        raise HTTPException(status_code=404, detail="Pull request not found")
+
+    if review.status in _IN_FLIGHT_REVIEW_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail="A review is already in progress for this PR",
+        )
+    if review.pr_state in ("closed", "merged"):
+        raise HTTPException(
+            status_code=409, detail=f"Pull request is {review.pr_state}"
+        )
+
+    # Reject if a review job for this PR is already queued/running
+    # (sync jobs don't count — they never perform reviews).
+    jobs = await db.execute(
+        select(ReviewJob).where(
+            ReviewJob.installation_id == review.installation_id,
+            ReviewJob.repo_full_name == review.repo_full_name,
+            ReviewJob.pr_number == review.pr_number,
+            ReviewJob.status.in_(["queued", "processing"]),
+        )
+    )
+    if any(
+        (j.payload or {}).get("job_type") != JOB_TYPE_SYNC_PRS
+        for j in jobs.scalars().all()
+    ):
+        raise HTTPException(
+            status_code=409, detail="A review is already queued for this PR"
+        )
+
+    # Fetch the current PR from GitHub — validates it still exists and is
+    # open, and picks up the latest head SHA.
+    owner, _, repo_name = review.repo_full_name.partition("/")
+    gc = GitHubClient(get_github_auth(), review.installation_id)
+    try:
+        pr = await gc.get_pr(owner, repo_name, review.pr_number)
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            raise HTTPException(
+                status_code=404,
+                detail="Pull request no longer exists on GitHub",
+            ) from e
+        raise HTTPException(
+            status_code=502,
+            detail=f"GitHub API error: {e.response.status_code}",
+        ) from e
+    except Exception as e:
+        raise HTTPException(
+            status_code=502, detail="Could not reach the GitHub API"
+        ) from e
+
+    state = pr_state_of(pr)
+    if state != "open":
+        review.pr_state = state
+        await db.commit()
+        raise HTTPException(
+            status_code=409, detail=f"Pull request is {state}"
+        )
+
+    job, review_row = await request_pr_review(
+        db,
+        review.installation_id,
+        review.repo_full_name,
+        pr,
+        repo_id=review.repo_id,
+    )
     await db.commit()
 
     logger.info(
-        "review_retry_enqueued",
+        "review_manually_enqueued",
         review_id=review.id,
         repo=review.repo_full_name,
         pr=review.pr_number,
-        sha=review.commit_sha[:8] if review.commit_sha else "",
+        job_id=job.id,
     )
 
     return {
         "status": "enqueued",
-        "message": f"Review #{review.id} re-queued successfully",
-        "review": _serialize_review(review),
+        "message": (
+            f"Review for {review.repo_full_name}#{review.pr_number} queued"
+        ),
+        "job_id": job.id,
+        "review": _serialize_review(review_row),
     }
 
 

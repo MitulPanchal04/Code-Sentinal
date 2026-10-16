@@ -25,6 +25,7 @@ from codesentinel.github.client import GitHubClient
 from codesentinel.github.sync import (
     JOB_TYPE_SYNC_PRS,
     apply_pr_meta_dict,
+    mark_review_running,
     sync_installation_pull_requests,
 )
 
@@ -175,6 +176,9 @@ async def process_review_job(job: ReviewJob) -> None:
 
     pr_number_commit_sha = f"{pr_number}#{commit_sha}"
     check_run_id: int | None = payload.get("check_run_id")
+
+    # Queued → running: distinguishes "in the queue" from actively reviewing.
+    await mark_review_running(repo_full_name, pr_number, commit_sha)
 
     logger.info(
         "processing_review",

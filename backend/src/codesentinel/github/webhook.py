@@ -8,8 +8,8 @@ from fastapi import HTTPException
 from structlog import get_logger
 
 from codesentinel.config.settings import get_settings
+from codesentinel.database.models import Installation, Review, ReviewJob
 from codesentinel.database.session import async_session_factory
-from codesentinel.database.models import ReviewJob, Installation
 from codesentinel.github.auth import get_github_auth
 from codesentinel.github.client import GitHubClient
 from codesentinel.github.sync import (
@@ -20,8 +20,6 @@ from codesentinel.github.sync import (
 
 logger = get_logger()
 _settings = get_settings()
-
-REVIEW_TRIGGERING_ACTIONS = {"opened", "synchronize", "reopened", "ready_for_review"}
 
 
 def verify_signature(payload_body: bytes, signature_header: str | None) -> None:
@@ -48,8 +46,8 @@ async def handle_webhook_event(
     """Route webhook events to appropriate handlers."""
 
     if event == "pull_request":
-        if action in REVIEW_TRIGGERING_ACTIONS:
-            return await _handle_pull_request(payload)
+        # PR events only sync metadata — reviews are triggered explicitly
+        # via the dashboard button, @codesentinel comments, or check re-runs.
         return await _handle_pull_request_state(payload, action)
     elif event == "issue_comment":
         return await _handle_issue_comment(payload)
@@ -65,49 +63,19 @@ async def handle_webhook_event(
         return {"status": "ignored", "event": event, "action": action}
 
 
-async def _handle_pull_request(payload: dict) -> dict:
-    pr = payload["pull_request"]
-    repo = payload["repository"]
-    installation = payload["installation"]
-
-    repo_full_name = repo["full_name"]
-    pr_number = pr["number"]
-    commit_sha = pr["head"]["sha"]
-
-    skip_reason = None
-    if pr.get("draft") and not _should_review_draft(pr):
-        skip_reason = "draft_pr"
-    elif _is_bot_actor(pr.get("user", {})):
-        skip_reason = "bot_author"
-
-    # Record/update the dashboard row for this PR. Skipped reviews still get a
-    # 'not_reviewed' row so the PR is visible; reviewed PRs become 'pending'.
-    try:
-        async with async_session_factory() as session:
-            await upsert_pull_request_row(
-                session,
-                installation["id"],
-                repo_full_name,
-                pr,
-                mark_pending=skip_reason is None,
-                repo_id=repo.get("id"),
-            )
-            await session.commit()
-    except Exception as e:
-        logger.warning(
-            "pr_row_upsert_failed", repo=repo_full_name, pr=pr_number, error=str(e)
-        )
-
-    if skip_reason:
-        return {"status": "skipped", "reason": skip_reason}
-
-    owner, repo_name = repo_full_name.split("/")
-
-    # Create a "queued" check run immediately so GitHub shows a spinner right away
-    check_run_id = None
+async def _create_queued_check_run(
+    installation_id: int,
+    owner: str,
+    repo_name: str,
+    commit_sha: str,
+    summary: str = (
+        "CodeSentinel has received this PR and will begin reviewing shortly."
+    ),
+) -> int | None:
+    """Create a 'queued' check run so GitHub shows a spinner. Best-effort."""
     try:
         auth = get_github_auth()
-        gc = GitHubClient(auth, installation["id"])
+        gc = GitHubClient(auth, installation_id)
         check_run = await gc.create_check_run(
             owner,
             repo_name,
@@ -115,18 +83,52 @@ async def _handle_pull_request(payload: dict) -> dict:
                 "name": "CodeSentinel Review",
                 "head_sha": commit_sha,
                 "status": "queued",
-                "output": {
-                    "title": "Review queued",
-                    "summary": "CodeSentinel has received this PR and will begin reviewing shortly.",
-                },
+                "output": {"title": "Review queued", "summary": summary},
             },
         )
-        check_run_id = check_run.get("id")
+        return check_run.get("id")
     except Exception as e:
         logger.warning("check_run_create_failed", error=str(e))
+        return None
+
+
+async def request_pr_review(
+    session,
+    installation_id: int,
+    repo_full_name: str,
+    pr: dict,
+    *,
+    repo_id: int | None = None,
+) -> tuple[ReviewJob, Review]:
+    """Enqueue an AI review for a single pull request.
+
+    Used by explicit review triggers only — the dashboard "Review PR" button,
+    the `@codesentinel review` comment, and the GitHub check-run re-run button.
+    Creates a queued check run, marks the dashboard row 'pending', and inserts
+    the ReviewJob. The caller is responsible for committing ``session``.
+
+    Returns the created job and the review row that was marked pending (the
+    row may differ from the one the caller selected if the head SHA moved).
+    """
+    owner, repo_name = repo_full_name.split("/")
+    pr_number = pr["number"]
+    commit_sha = pr["head"]["sha"]
+
+    check_run_id = await _create_queued_check_run(
+        installation_id, owner, repo_name, commit_sha
+    )
+
+    row = await upsert_pull_request_row(
+        session,
+        installation_id,
+        repo_full_name,
+        pr,
+        mark_pending=True,
+        repo_id=repo_id,
+    )
 
     job_payload = {
-        "installation_id": installation["id"],
+        "installation_id": installation_id,
         "repo_full_name": repo_full_name,
         "pr_number": pr_number,
         "commit_sha": commit_sha,
@@ -141,11 +143,19 @@ async def _handle_pull_request(payload: dict) -> dict:
         "check_run_id": check_run_id,
     }
 
-    await _enqueue_review(job_payload)
+    job = ReviewJob(
+        installation_id=installation_id,
+        repo_full_name=repo_full_name,
+        pr_number=pr_number,
+        commit_sha=commit_sha,
+        payload=job_payload,
+        status="queued",
+    )
+    session.add(job)
     logger.info(
         "review_enqueued", repo=repo_full_name, pr=pr_number, sha=commit_sha[:8]
     )
-    return {"status": "enqueued", "pr_number": pr_number}
+    return job, row
 
 
 async def _handle_pull_request_state(payload: dict, action: str) -> dict:
@@ -412,26 +422,13 @@ async def _handle_check_rerequest(payload: dict) -> dict:
     owner, repo_name = repo_full_name.split("/")
 
     # Create a queued check run for the re-request
-    check_run_id = None
-    try:
-        auth = get_github_auth()
-        gc = GitHubClient(auth, installation["id"])
-        new_check = await gc.create_check_run(
-            owner,
-            repo_name,
-            {
-                "name": "CodeSentinel Review",
-                "head_sha": commit_sha,
-                "status": "queued",
-                "output": {
-                    "title": "Review queued",
-                    "summary": "CodeSentinel re-review has been queued.",
-                },
-            },
-        )
-        check_run_id = new_check.get("id")
-    except Exception as e:
-        logger.warning("check_run_create_failed", error=str(e))
+    check_run_id = await _create_queued_check_run(
+        installation["id"],
+        owner,
+        repo_name,
+        commit_sha,
+        summary="CodeSentinel re-review has been queued.",
+    )
 
     try:
         await mark_review_pending(
@@ -484,7 +481,3 @@ def _is_bot_actor(user: dict) -> bool:
         or login == "codesentinel[bot]"
         or login.endswith("[bot]")
     )
-
-
-def _should_review_draft(pr: dict) -> bool:
-    return False

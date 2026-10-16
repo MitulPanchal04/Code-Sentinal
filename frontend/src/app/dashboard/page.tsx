@@ -110,7 +110,7 @@ export default function DashboardPage() {
             <p className="text-muted-foreground">No pull requests yet.</p>
             <p className="mt-1 text-sm text-muted-foreground">
               Install the GitHub App — existing open PRs are synced
-              automatically — or open a PR to trigger a review.
+              automatically — then press &quot;Review PR&quot; to review one.
             </p>
           </div>
         ) : (

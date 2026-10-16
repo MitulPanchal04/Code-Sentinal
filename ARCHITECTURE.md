@@ -72,22 +72,26 @@ Queries always filter through `Installation.github_user_id == github_user_id` �
 
 ## 3. Webhook → Queue → Worker
 
-This is the core event-driven path that triggers a review.
+This is the core event-driven path that runs a review. Reviews only start on
+**explicit user action** — the dashboard "Review PR" button
+(`POST /api/reviews/{id}/retry`), an `@codesentinel review` comment, or the
+GitHub check-run "Re-run" button. Plain `pull_request` webhooks only sync PR
+metadata; they never enqueue a review.
 
 ```mermaid
 sequenceDiagram
-    participant GH as GitHub
-    participant WH as /github/webhook
+    participant UI as Dashboard
+    participant API as /api/reviews/:id/retry
     participant DB as PostgreSQL
     participant W as Background Worker
     participant GH2 as GitHub API
 
-    GH->>WH: POST pull_request.opened (HMAC signed)
-    WH->>WH: verify sha256 signature
-    WH->>GH2: create check_run (status=queued)
-    WH->>DB: INSERT review_jobs (status=queued)
-    WH->>DB: INSERT reviews (status=pending)
-    WH-->>GH: 200 OK
+    UI->>API: POST /api/reviews/{id}/retry (auth'd user)
+    API->>DB: lock review row, verify ownership + no in-flight job
+    API->>GH2: get PR (fresh head sha, must be open)
+    API->>GH2: create check_run (status=queued)
+    API->>DB: INSERT review_jobs (status=queued), reviews.status=pending
+    API-->>UI: 200 {"status": "enqueued"}
 
     loop every few seconds
         W->>DB: SELECT ... FOR UPDATE SKIP LOCKED WHERE status=queued
@@ -106,8 +110,10 @@ sequenceDiagram
 
 | Event | Action | What happens |
 |---|---|---|
-| `pull_request` | opened / synchronize / reopened / ready_for_review | Upserts PR row (status=pending), creates check run (queued), enqueues `ReviewJob` |
+| `pull_request` | opened / synchronize / reopened / ready_for_review | Upserts PR row with fresh metadata — **no review** |
 | `pull_request` | closed / edited / other | Updates the PR row (title, open/closed/merged state) — no review |
+| `issue_comment` | created | `@codesentinel` commands — `review` enqueues a review (explicit trigger) |
+| `pull_request_review_comment` | created | Inline reply job on existing review threads |
 | `check_run` | rerequested | Re-enqueues the job (this is the "Re-run" button on GitHub) |
 | `installation` | created | Adds `Installation` rows + enqueues a PR sync job |
 | `installation` | deleted | Removes all `Installation` rows for that installation_id |
@@ -131,8 +137,16 @@ in place — sync never enqueues review jobs.
 - `POST /api/installations/{id}/sync` lets users trigger it manually — covers
   apps installed before this feature existed. `GET /api/installations` also
   auto-enqueues a sync for repos it discovers outside of webhooks.
-| `issue_comment` | created | Bot command handling (e.g. re-trigger) |
-| `pull_request_review_comment` | created | Inline feedback processing |
+
+### Manual review trigger
+
+`POST /api/reviews/{id}/retry` starts an AI review for exactly one PR. It
+locks the review row (`FOR UPDATE`), verifies the requesting user owns an
+installation covering that repo, rejects in-flight (`pending`/`running`) rows
+and already-queued review jobs with 409, rejects closed/merged PRs, refetches
+the PR from GitHub for the current head SHA, creates the queued check run,
+and enqueues a `ReviewJob` — all explicit triggers share
+`request_pr_review()` in `github/webhook.py`.
 
 ### Queue mechanics
 

@@ -57,13 +57,17 @@ export default function ReviewDetailPage() {
     fetchReview();
   }, [id]);
 
-  // Auto-poll when review is in progress
+  // Auto-poll while the review is queued or in progress
   useEffect(() => {
-    if (!review?.id || review.status !== "pending") return;
+    if (
+      !review?.id ||
+      (review.status !== "pending" && review.status !== "running")
+    )
+      return;
     const interval = setInterval(async () => {
       try {
         const updated = await api.getReview(review.id);
-        if (updated.status !== "pending") {
+        if (updated.status !== "pending" && updated.status !== "running") {
           setReview(updated);
           if (updated.status === "complete") {
             setRetryMessage("Review completed successfully!");
@@ -147,13 +151,17 @@ export default function ReviewDetailPage() {
         </div>
       )}
 
-      {review.status === "pending" && (
+      {(review.status === "pending" || review.status === "running") && (
         <div className="flex items-center gap-3 rounded-lg border border-blue-500/30 bg-blue-500/10 p-4">
           <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
           <div className="flex-1">
-            <p className="text-sm font-medium text-blue-500">Review in progress</p>
+            <p className="text-sm font-medium text-blue-500">
+              {review.status === "pending" ? "Review queued" : "Review in progress"}
+            </p>
             <p className="text-xs text-blue-500/80">
-              The AI review is analyzing this pull request. Results will update automatically.
+              {review.status === "pending"
+                ? "This review is queued and will start shortly. Results will update automatically."
+                : "The AI review is analyzing this pull request. Results will update automatically."}
             </p>
           </div>
         </div>
@@ -193,30 +201,42 @@ export default function ReviewDetailPage() {
           <div className="flex items-center gap-4">
             <button
               onClick={handleRetry}
-              disabled={retrying || review.status === "pending"}
+              disabled={
+                retrying ||
+                review.status === "pending" ||
+                review.status === "running" ||
+                review.pr_state === "closed" ||
+                review.pr_state === "merged"
+              }
               className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
               title={
                 review.status === "failed"
                   ? "Retry failed review"
                   : review.status === "not_reviewed"
-                  ? "Run review now"
-                  : "Re-run review"
+                  ? "Start AI review for this PR"
+                  : "Run another review"
               }
             >
               <RotateCcw
                 className={`h-4 w-4 ${
-                  retrying || review.status === "pending" ? "animate-spin" : ""
+                  retrying ||
+                  review.status === "pending" ||
+                  review.status === "running"
+                    ? "animate-spin"
+                    : ""
                 }`}
               />
               {retrying
                 ? "Queuing…"
                 : review.status === "pending"
-                ? "Running…"
+                ? "Queued…"
+                : review.status === "running"
+                ? "Reviewing…"
                 : review.status === "failed"
                 ? "Retry Review"
                 : review.status === "not_reviewed"
-                ? "Run Review"
-                : "Re-run Review"}
+                ? "Review PR"
+                : "Review Again"}
             </button>
             <div
               className={`flex h-16 w-16 items-center justify-center rounded-full text-2xl font-bold ${scoreColor(
@@ -266,20 +286,28 @@ export default function ReviewDetailPage() {
             <p className="text-sm font-medium">Not reviewed yet</p>
             <p className="text-xs text-muted-foreground">
               This open PR was synced from GitHub but no AI review has run.
-              Click &quot;Run Review Now&quot; to start analysis.
+              Click &quot;Review PR&quot; to start analysis.
             </p>
           </div>
           <button
             onClick={handleRetry}
-            disabled={retrying || review.status === "pending"}
+            disabled={
+              retrying ||
+              review.status === "pending" ||
+              review.status === "running"
+            }
             className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm transition-colors hover:bg-accent disabled:opacity-50"
           >
             <RotateCcw
               className={`h-3.5 w-3.5 ${
-                retrying || review.status === "pending" ? "animate-spin" : ""
+                retrying ||
+                review.status === "pending" ||
+                review.status === "running"
+                  ? "animate-spin"
+                  : ""
               }`}
             />
-            {retrying ? "Starting…" : "Run Review Now"}
+            {retrying ? "Starting…" : "Review PR"}
           </button>
           {review.pr_url && (
             <a
@@ -391,7 +419,11 @@ export default function ReviewDetailPage() {
             </div>
             <button
               onClick={handleRetry}
-              disabled={retrying || review.status === "pending"}
+              disabled={
+                retrying ||
+                review.status === "pending" ||
+                review.status === "running"
+              }
               className="flex items-center gap-2 rounded-md bg-destructive px-3 py-1.5 text-sm font-medium text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50"
             >
               <RotateCcw className={`h-4 w-4 ${retrying ? "animate-spin" : ""}`} />

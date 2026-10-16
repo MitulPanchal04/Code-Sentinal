@@ -47,9 +47,11 @@ export default function ReviewsPage() {
     fetchData();
   }, [fetchData]);
 
-  // Auto-poll when any review is in progress
+  // Auto-poll while any review is queued or in progress
   useEffect(() => {
-    const hasPending = reviews.some((r) => r.status === "pending");
+    const hasPending = reviews.some(
+      (r) => r.status === "pending" || r.status === "running"
+    );
     if (!hasPending) return;
     const timer = setInterval(() => {
       fetchData(true);
@@ -147,8 +149,9 @@ export default function ReviewsPage() {
           >
             <option value="">All statuses</option>
             <option value="not_reviewed">Not reviewed</option>
-            <option value="pending">In progress</option>
-            <option value="complete">Complete</option>
+            <option value="pending">Queued</option>
+            <option value="running">Reviewing</option>
+            <option value="complete">Reviewed</option>
             <option value="failed">Failed</option>
           </select>
         </div>
@@ -180,8 +183,8 @@ export default function ReviewsPage() {
           <div className="px-6 py-12 text-center">
             <p className="text-muted-foreground">No pull requests found.</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Click &quot;Sync PRs&quot; to import existing open PRs, or open a
-              PR in a connected repository to trigger a review.
+              Click &quot;Sync PRs&quot; to import existing open PRs, then press
+              &quot;Review PR&quot; on any row to start an AI review.
             </p>
           </div>
         ) : (
@@ -260,35 +263,47 @@ export default function ReviewsPage() {
                     {formatDate(review.pr_created_at || review.created_at)}
                   </td>
                   <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      onClick={(e) => handleRetry(review.id, e)}
-                      disabled={retryingId === review.id || review.status === "pending"}
-                      className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
-                      title={
-                        review.status === "failed"
-                          ? "Retry failed review"
+                    {review.pr_state === "closed" || review.pr_state === "merged" ? (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    ) : (
+                      <button
+                        onClick={(e) => handleRetry(review.id, e)}
+                        disabled={
+                          retryingId === review.id ||
+                          review.status === "pending" ||
+                          review.status === "running"
+                        }
+                        className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+                        title={
+                          review.status === "failed"
+                            ? "Retry failed review"
+                            : review.status === "not_reviewed"
+                            ? "Start AI review for this PR"
+                            : "Run another review"
+                        }
+                      >
+                        <RotateCcw
+                          className={`h-3 w-3 ${
+                            retryingId === review.id ||
+                            review.status === "pending" ||
+                            review.status === "running"
+                              ? "animate-spin"
+                              : ""
+                          }`}
+                        />
+                        {retryingId === review.id
+                          ? "Queuing…"
+                          : review.status === "pending"
+                          ? "Queued…"
+                          : review.status === "running"
+                          ? "Reviewing…"
+                          : review.status === "failed"
+                          ? "Retry Review"
                           : review.status === "not_reviewed"
-                          ? "Run review now"
-                          : "Re-run review"
-                      }
-                    >
-                      <RotateCcw
-                        className={`h-3 w-3 ${
-                          retryingId === review.id || review.status === "pending"
-                            ? "animate-spin"
-                            : ""
-                        }`}
-                      />
-                      {retryingId === review.id
-                        ? "Queuing…"
-                        : review.status === "pending"
-                        ? "Running…"
-                        : review.status === "failed"
-                        ? "Retry"
-                        : review.status === "not_reviewed"
-                        ? "Run"
-                        : "Re-run"}
-                    </button>
+                          ? "Review PR"
+                          : "Review Again"}
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}

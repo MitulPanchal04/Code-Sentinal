@@ -49,6 +49,8 @@ export function reviewStatusBadge(status: string): string {
       return "bg-red-500/10 text-red-500";
     case "not_reviewed":
       return "bg-secondary text-muted-foreground";
+    case "pending":
+      return "bg-blue-500/10 text-blue-500";
     default:
       return "bg-yellow-500/10 text-yellow-500";
   }
@@ -59,7 +61,11 @@ export function reviewStatusLabel(status: string): string {
     case "not_reviewed":
       return "not reviewed";
     case "pending":
-      return "in progress";
+      return "queued";
+    case "running":
+      return "reviewing";
+    case "complete":
+      return "reviewed";
     default:
       return status;
   }

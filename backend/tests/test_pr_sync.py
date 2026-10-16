@@ -326,15 +326,10 @@ async def test_pull_request_edited_updates_title(store, fake_session_factory):
     assert row.status == "not_reviewed"
 
 
-async def test_pull_request_opened_marks_pending_and_enqueues(
-    store, fake_session_factory, monkeypatch
+async def test_pull_request_opened_only_syncs_metadata(
+    store, fake_session_factory
 ):
-    # Prevent real GitHub API calls for the check run
-    fake_gc = MagicMock()
-    fake_gc.create_check_run = AsyncMock(return_value={"id": 99})
-    monkeypatch.setattr(webhook_module, "GitHubClient", lambda *a, **k: fake_gc)
-    monkeypatch.setattr(webhook_module, "get_github_auth", lambda: MagicMock())
-
+    """PR webhooks must NOT auto-trigger reviews — only sync metadata."""
     payload = {
         "action": "opened",
         "installation": {"id": 7},
@@ -342,14 +337,32 @@ async def test_pull_request_opened_marks_pending_and_enqueues(
         "pull_request": make_pr(5, sha="a" * 40),
     }
     result = await handle_webhook_event("pull_request", "opened", payload)
-    assert result["status"] == "enqueued"
-    assert len(store.jobs) == 1
-    assert store.jobs[0].payload.get("job_type") != JOB_TYPE_SYNC_PRS
-    assert store.reviews[0].status == "pending"
+    assert result["status"] == "pr_updated"
+    assert store.jobs == []
+    assert store.reviews[0].status == "not_reviewed"
+
+
+async def test_pull_request_synchronize_does_not_enqueue_review(
+    store, fake_session_factory
+):
+    row = make_review(pr_number=5, commit_sha="a" * 40, status="complete")
+    store.reviews.append(row)
+
+    payload = {
+        "action": "synchronize",
+        "installation": {"id": 7},
+        "repository": make_repo(),
+        "pull_request": make_pr(5, sha="b" * 40),
+    }
+    result = await handle_webhook_event("pull_request", "synchronize", payload)
+    assert result["status"] == "pr_updated"
+    # metadata for the new head sha is synced, but no review job is created
+    assert store.jobs == []
+    assert row.status == "complete"  # existing review result preserved
 
 
 async def test_pull_request_draft_creates_not_reviewed_only(
-    store, fake_session_factory, monkeypatch
+    store, fake_session_factory
 ):
     payload = {
         "action": "opened",
@@ -358,7 +371,7 @@ async def test_pull_request_draft_creates_not_reviewed_only(
         "pull_request": make_pr(5, sha="a" * 40, draft=True),
     }
     result = await handle_webhook_event("pull_request", "opened", payload)
-    assert result["status"] == "skipped"
+    assert result["status"] == "pr_updated"
     assert store.reviews[0].status == "not_reviewed"
     assert store.jobs == []
 

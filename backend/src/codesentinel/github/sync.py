@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from structlog import get_logger
 
 from codesentinel.database.models import Installation, Review, ReviewJob
@@ -181,6 +181,32 @@ async def mark_review_pending(
             row.status = _PENDING
             row.error_message = None
             await session.commit()
+
+
+async def mark_review_running(
+    repo_full_name: str,
+    pr_number: int,
+    commit_sha: str,
+) -> None:
+    """Transition a queued ('pending') row to 'running' when a worker claims
+    its job — lets the UI distinguish queued from actively reviewing."""
+    key = f"{pr_number}#{commit_sha}"
+    try:
+        async with async_session_factory() as session:
+            await session.execute(
+                update(Review)
+                .where(
+                    Review.repo_full_name == repo_full_name,
+                    Review.pr_number_commit_sha == key,
+                    Review.status == _PENDING,
+                )
+                .values(status="running")
+            )
+            await session.commit()
+    except Exception as e:
+        logger.warning(
+            "mark_running_failed", repo=repo_full_name, pr=pr_number, error=str(e)
+        )
 
 
 async def enqueue_pr_sync(

@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 from sqlalchemy.sql import operators
-from sqlalchemy.sql.dml import Delete
+from sqlalchemy.sql.dml import Delete, Update
 from sqlalchemy.sql.elements import BinaryExpression, BooleanClauseList
 
 from codesentinel.database.models import (
@@ -62,6 +62,16 @@ def _where_criteria(stmt: Any) -> list:
     if isinstance(criteria, (list, tuple)):
         return list(criteria)
     return [criteria]
+
+
+def _update_values(stmt: Any) -> dict[str, Any]:
+    """Extract {column_name: literal} pairs from an UPDATE ... VALUES clause."""
+    out: dict[str, Any] = {}
+    for col, expr in getattr(stmt, "_values", {}).items():
+        name = getattr(col, "key", None) or getattr(col, "name", None)
+        if name is not None:
+            out[name] = getattr(expr, "value", expr)
+    return out
 
 
 def _filters(stmt: Any) -> list[tuple[str | None, Any, Any]]:
@@ -144,12 +154,21 @@ class FakeSession:
         pass
 
     async def execute(self, stmt: Any) -> FakeResult:
-        if isinstance(stmt, Delete):
+        if isinstance(stmt, (Delete, Update)):
             store = self.store.store_for_table(stmt.table.name)
             filters = _filters(stmt)
-            for obj in [o for o in store if _matches(o, filters)]:
-                store.remove(obj)
-            return FakeResult([])
+            matched = [o for o in store if _matches(o, filters)]
+            if isinstance(stmt, Delete):
+                for obj in matched:
+                    store.remove(obj)
+            else:
+                values = _update_values(stmt)
+                for obj in matched:
+                    for name, value in values.items():
+                        setattr(obj, name, value)
+            result = FakeResult([])
+            result.rowcount = len(matched)
+            return result
 
         descs = stmt.column_descriptions
         entity = descs[0].get("entity")
