@@ -1,7 +1,7 @@
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { GitHubHeader } from "@/components/layout/GitHubHeader";
+import { DashboardShell } from "@/components/layout/DashboardShell";
 
 export default async function DashboardLayout({
   children,
@@ -14,12 +14,5 @@ export default async function DashboardLayout({
     redirect("/signin");
   }
 
-  return (
-    <div className="min-h-screen bg-[#0d1117] text-[#e6edf3] font-sans">
-      <GitHubHeader />
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 w-full">
-        {children}
-      </main>
-    </div>
-  );
+  return <DashboardShell>{children}</DashboardShell>;
 }
