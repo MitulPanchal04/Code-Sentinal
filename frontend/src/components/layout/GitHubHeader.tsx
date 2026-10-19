@@ -259,7 +259,7 @@ export function GitHubHeader() {
                 className={cn(
                   "group flex items-center gap-2 px-3 py-2 text-xs font-medium border-b-2 transition-all whitespace-nowrap",
                   active
-                    ? "border-[#fd8c73] text-white font-semibold"
+                    ? "border-[#58a6ff] text-white font-semibold"
                     : "border-transparent text-muted-foreground hover:border-[#8b949e]/50 hover:text-[#e6edf3]"
                 )}
               >
@@ -275,7 +275,7 @@ export function GitHubHeader() {
                     className={cn(
                       "rounded-full px-1.5 py-0 text-[10px] font-mono",
                       active
-                        ? "bg-[#fd8c73]/20 text-[#fd8c73] font-semibold"
+                        ? "bg-[#58a6ff]/20 text-[#58a6ff] font-semibold"
                         : "bg-[#21262d] text-muted-foreground"
                     )}
                   >

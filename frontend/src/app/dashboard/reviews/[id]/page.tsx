@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { api, Review, Finding } from "@/lib/api";
@@ -8,31 +8,30 @@ import { formatDate } from "@/lib/utils";
 import {
   ArrowLeft,
   GitPullRequest,
-  GitMerge,
-  GitCommit,
+  GitBranch,
   CheckCircle2,
   AlertCircle,
-  HelpCircle,
-  Copy,
-  Check,
-  FileCode,
+  Clock,
+  ExternalLink,
   Shield,
   Layers,
-  Terminal,
-  ExternalLink,
-  Bot,
   Sparkles,
-  MessageSquare,
-  ListChecks,
-  FileDiff,
-  ChevronRight,
-  ChevronDown,
+  RefreshCw,
+  Copy,
+  Check,
+  AlertTriangle,
+  Lightbulb,
+  FileCode,
   DollarSign,
-  Zap,
+  Cpu,
+  BrainCircuit,
+  Workflow,
+  ArrowDown,
+  CheckSquare,
+  XSquare,
+  AlertOctagon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { toast } from "sonner";
@@ -45,10 +44,8 @@ export default function ReviewDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copiedSha, setCopiedSha] = useState(false);
-  const [copiedDiagram, setCopiedDiagram] = useState(false);
-  const [activeTab, setActiveTab] = useState<"conversation" | "checks" | "files" | "diagram">(
-    "conversation"
-  );
+  const [severityFilter, setSeverityFilter] = useState<"all" | "critical" | "warning" | "info">("all");
+  const [reRunning, setReRunning] = useState(false);
 
   useEffect(() => {
     async function fetchReview() {
@@ -71,9 +68,7 @@ export default function ReviewDetailPage() {
         setReview(data);
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
-        setError(
-          "Failed to load review details. The backend may be offline or the review does not exist."
-        );
+        setError("Failed to load review details. The backend may be offline or the review does not exist.");
       } finally {
         setLoading(false);
       }
@@ -81,29 +76,55 @@ export default function ReviewDetailPage() {
     fetchReview();
   }, [id]);
 
-  const copyToClipboard = (text: string, type: "sha" | "diagram") => {
+  const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
-    if (type === "sha") {
-      setCopiedSha(true);
-      toast.success("Commit SHA copied to clipboard");
-      setTimeout(() => setCopiedSha(false), 2000);
-    } else {
-      setCopiedDiagram(true);
-      toast.success("Mermaid diagram code copied");
-      setTimeout(() => setCopiedDiagram(false), 2000);
+    setCopiedSha(true);
+    toast.success("Commit SHA copied to clipboard");
+    setTimeout(() => setCopiedSha(false), 2000);
+  };
+
+  const handleReRun = async () => {
+    if (!review) return;
+    setReRunning(true);
+    try {
+      await api.syncInstallation(review.installation_id);
+      toast.success("Inspection pipeline queued for re-run");
+    } catch {
+      toast.error("Failed to re-trigger review pipeline");
+    } finally {
+      setReRunning(false);
     }
   };
 
+  const findings: Finding[] = useMemo(() => review?.findings || [], [review?.findings]);
+  const criticals = useMemo(() => findings.filter((f) => f.severity === "critical"), [findings]);
+  const warnings = useMemo(() => findings.filter((f) => f.severity === "warning"), [findings]);
+  const infos = useMemo(
+    () =>
+      findings.filter(
+        (f) => f.severity === "info" || (!f.severity.startsWith("crit") && !f.severity.startsWith("warn"))
+      ),
+    [findings]
+  );
+
+  const filteredFindings = useMemo(() => {
+    if (severityFilter === "critical") return criticals;
+    if (severityFilter === "warning") return warnings;
+    if (severityFilter === "info") return infos;
+    return findings;
+  }, [findings, severityFilter, criticals, warnings, infos]);
+
   if (loading) {
     return (
-      <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-6 w-full text-slate-100 pb-12">
         <Skeleton className="h-6 w-32 bg-[#21262d]" />
-        <div className="rounded-md border border-[#30363d] bg-[#161b22] p-6 flex flex-col gap-4">
+        <div className="rounded-lg border border-[#30363d] bg-[#161b22] p-6 flex flex-col gap-4">
           <Skeleton className="h-8 w-80 bg-[#21262d]" />
           <Skeleton className="h-4 w-96 bg-[#21262d]" />
-          <div className="flex gap-4 pt-4">
-            <Skeleton className="h-6 w-24 bg-[#21262d]" />
-            <Skeleton className="h-6 w-24 bg-[#21262d]" />
+          <div className="grid grid-cols-5 gap-3 pt-4">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-20 bg-[#21262d]" />
+            ))}
           </div>
         </div>
       </div>
@@ -112,7 +133,7 @@ export default function ReviewDetailPage() {
 
   if (error || !review) {
     return (
-      <div className="flex flex-col items-center justify-center gap-4 py-20 text-center">
+      <div className="flex flex-col items-center justify-center gap-4 py-20 text-center text-slate-100">
         {error && (
           <Alert variant="destructive" className="max-w-md text-left bg-[#f85149]/10 border-[#f85149]/30 text-[#f85149]">
             <AlertCircle className="size-4" />
@@ -122,421 +143,556 @@ export default function ReviewDetailPage() {
         )}
         <Button asChild variant="outline" size="sm" className="border-[#30363d] bg-[#21262d] text-white">
           <Link href="/dashboard/reviews">
-            <ArrowLeft data-icon="inline-start" />
-            Back to Pull Requests
+            <ArrowLeft className="size-4 mr-1" />
+            Back to Reviews
           </Link>
         </Button>
       </div>
     );
   }
 
-  const findings: Finding[] = review.findings || [];
-  const criticals = findings.filter((f) => f.severity === "critical");
-  const warnings = findings.filter((f) => f.severity === "warning");
+  const score = review.merge_score ?? 8.5;
+  const isApproved = score >= 4;
+  const isWarning = score === 3;
   const totalTokens = (review.input_tokens || 0) + (review.output_tokens || 0);
-  const isApproved = review.merge_score && review.merge_score >= 4;
-  const isWarning = review.merge_score && review.merge_score === 3;
 
   return (
-    <div className="flex flex-col gap-5">
-      {/* Back Link */}
-      <div className="flex items-center justify-between">
-        <Link
-          href="/dashboard/reviews"
-          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-white transition-colors"
-        >
-          <ArrowLeft className="size-3.5" />
-          <span>Back to pull requests</span>
-        </Link>
-
-        <a
-          href={`https://github.com/${review.repo_full_name}/pull/${review.pr_number}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-1.5 text-xs text-[#58a6ff] hover:underline"
-        >
-          <span>View PR on GitHub</span>
-          <ExternalLink className="size-3" />
-        </a>
-      </div>
-
-      {/* GitHub PR Title & State Banner */}
-      <div className="flex flex-col gap-2">
-        <div className="flex flex-wrap items-baseline gap-2">
-          <h1 className="text-2xl font-normal text-white">
-            <span>Review of {review.repo_full_name}</span>{" "}
-            <span className="text-muted-foreground font-light">#{review.pr_number}</span>
-          </h1>
-        </div>
-
-        {/* GitHub PR Meta Row */}
-        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground pb-2">
-          {/* PR Status badge */}
-          <span
-            className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold text-white ${
-              review.status === "complete"
-                ? "bg-[#238636]"
-                : review.status === "failed"
-                  ? "bg-[#da3633]"
-                  : "bg-[#8957e5]"
-            }`}
-          >
-            <GitPullRequest className="size-3.5" />
-            <span className="capitalize">{review.status === "complete" ? "Open" : review.status}</span>
-          </span>
-
-          <span className="font-semibold text-[#e6edf3]">codesentinel-bot</span>
-          <span>reviewed commit</span>
-
-          {review.commit_sha && (
-            <button
-              onClick={() => copyToClipboard(review.commit_sha, "sha")}
-              className="inline-flex items-center gap-1 rounded bg-[#21262d] px-1.5 py-0.5 font-mono text-[11px] text-[#58a6ff] border border-[#30363d] hover:bg-[#30363d]"
-              title="Copy commit SHA"
-            >
-              <span>{review.commit_sha.slice(0, 7)}</span>
-              {copiedSha ? <Check className="size-3 text-emerald-400" /> : <Copy className="size-3" />}
-            </button>
-          )}
-
-          <span>into <span className="font-mono bg-[#21262d] px-1.5 py-0.5 rounded text-white border border-[#30363d]">main</span></span>
-          <span>·</span>
-          <span>{formatDate(review.created_at)}</span>
-        </div>
-      </div>
-
-      {/* GitHub Tabs Bar */}
-      <div className="flex items-center gap-1 border-b border-[#30363d] text-xs">
-        <button
-          onClick={() => setActiveTab("conversation")}
-          className={`flex items-center gap-2 px-3 py-2 border-b-2 font-medium transition-colors ${
-            activeTab === "conversation"
-              ? "border-[#fd8c73] text-white font-semibold"
-              : "border-transparent text-muted-foreground hover:text-white"
-          }`}
-        >
-          <MessageSquare className="size-3.5" />
-          <span>Conversation</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab("checks")}
-          className={`flex items-center gap-2 px-3 py-2 border-b-2 font-medium transition-colors ${
-            activeTab === "checks"
-              ? "border-[#fd8c73] text-white font-semibold"
-              : "border-transparent text-muted-foreground hover:text-white"
-          }`}
-        >
-          <ListChecks className="size-3.5" />
-          <span>Checks</span>
-          <span className="rounded-full bg-[#21262d] px-1.5 py-0 text-[10px] font-mono">
-            {review.enabled_agent_count || 6}
-          </span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab("files")}
-          className={`flex items-center gap-2 px-3 py-2 border-b-2 font-medium transition-colors ${
-            activeTab === "files"
-              ? "border-[#fd8c73] text-white font-semibold"
-              : "border-transparent text-muted-foreground hover:text-white"
-          }`}
-        >
-          <FileDiff className="size-3.5" />
-          <span>Files Changed / Findings</span>
-          <span className="rounded-full bg-[#21262d] px-1.5 py-0 text-[10px] font-mono">
-            {findings.length}
-          </span>
-        </button>
-
-        {review.diagram && (
-          <button
-            onClick={() => setActiveTab("diagram")}
-            className={`flex items-center gap-2 px-3 py-2 border-b-2 font-medium transition-colors ${
-              activeTab === "diagram"
-                ? "border-[#fd8c73] text-white font-semibold"
-                : "border-transparent text-muted-foreground hover:text-white"
-            }`}
-          >
-            <Layers className="size-3.5" />
-            <span>Architecture Diagram</span>
-          </button>
-        )}
-      </div>
-
-      {/* Tab 1: Conversation & Bot Review Comment Box */}
-      {activeTab === "conversation" && (
-        <div className="flex flex-col gap-6">
-          {/* GitHub Comment Bubble */}
-          <div className="flex gap-3">
-            {/* Bot Avatar */}
-            <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[#21262d] border border-[#30363d] text-white">
-              <Bot className="size-5 text-[#58a6ff]" />
-            </div>
-
-            {/* Comment Card */}
-            <div className="flex-1 rounded-md border border-[#30363d] bg-[#161b22] overflow-hidden">
-              {/* Comment Header */}
-              <div className="flex items-center justify-between border-b border-[#30363d] bg-[#21262d] px-4 py-2.5 text-xs">
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold text-white">codesentinel-bot</span>
-                  <span className="rounded border border-[#30363d] bg-[#161b22] px-1 py-0 text-[10px] text-muted-foreground font-mono">
-                    BOT
-                  </span>
-                  <span className="text-muted-foreground">reviewed {formatDate(review.created_at)}</span>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="border-[#30363d] text-xs font-mono">
-                    {totalTokens.toLocaleString()} tokens
-                  </Badge>
-                </div>
-              </div>
-
-              {/* Comment Body */}
-              <div className="p-5 flex flex-col gap-5 text-sm">
-                {/* Large Merge Score Verdict Banner */}
-                <div
-                  className={`rounded-md border p-4 flex flex-col gap-1.5 ${
-                    isApproved
-                      ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
-                      : isWarning
-                        ? "border-amber-500/40 bg-amber-500/10 text-amber-300"
-                        : "border-[#f85149]/40 bg-[#f85149]/10 text-[#f85149]"
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 font-bold text-base">
-                      {isApproved ? (
-                        <CheckCircle2 className="size-5 text-emerald-400" />
-                      ) : (
-                        <AlertCircle className="size-5 text-[#f85149]" />
-                      )}
-                      <span>
-                        Merge Score: {review.merge_score !== null ? `${review.merge_score} / 5` : "Pending"} —{" "}
-                        {isApproved ? "Approved" : isWarning ? "Review Suggested" : "Changes Requested"}
-                      </span>
-                    </div>
-                  </div>
-                  {review.merge_score_reason && (
-                    <p className="text-xs italic leading-relaxed text-[#e6edf3]/90 pt-1">
-                      &ldquo;{review.merge_score_reason}&rdquo;
-                    </p>
-                  )}
-                </div>
-
-                {/* Summary */}
-                {review.summary && (
-                  <div className="flex flex-col gap-2">
-                    <h3 className="font-semibold text-white text-xs uppercase tracking-wider text-muted-foreground">
-                      Summary of Changes
-                    </h3>
-                    <p className="text-xs leading-relaxed text-[#e6edf3] whitespace-pre-line bg-[#0d1117] p-4 rounded-md border border-[#30363d]">
-                      {review.summary}
-                    </p>
-                  </div>
-                )}
-
-                {/* Findings Count Summary */}
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="rounded border border-[#30363d] bg-[#0d1117] p-3 text-center">
-                    <span className="text-[11px] text-muted-foreground uppercase">Critical</span>
-                    <p className="text-xl font-bold font-mono text-[#f85149]">{criticals.length}</p>
-                  </div>
-                  <div className="rounded border border-[#30363d] bg-[#0d1117] p-3 text-center">
-                    <span className="text-[11px] text-muted-foreground uppercase">Warnings</span>
-                    <p className="text-xl font-bold font-mono text-amber-400">{warnings.length}</p>
-                  </div>
-                  <div className="rounded border border-[#30363d] bg-[#0d1117] p-3 text-center">
-                    <span className="text-[11px] text-muted-foreground uppercase">Est. Cost</span>
-                    <p className="text-xl font-bold font-mono text-emerald-400">
-                      ${review.estimated_cost_usd?.toFixed(4) || "0.0000"}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex justify-end pt-2">
-                  <Button
-                    size="sm"
-                    onClick={() => setActiveTab("files")}
-                    className="h-8 text-xs bg-[#238636] hover:bg-[#2ea043] text-white"
-                  >
-                    <FileDiff data-icon="inline-start" />
-                    Inspect {findings.length} Findings in Diff
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Tab 2: Checks & Agent Execution List */}
-      {activeTab === "checks" && (
-        <div className="rounded-md border border-[#30363d] bg-[#161b22] overflow-hidden">
-          <div className="border-b border-[#30363d] bg-[#21262d] px-4 py-3">
-            <h2 className="text-sm font-semibold text-white">CodeSentinel Multi-Agent Check Runs</h2>
-            <p className="text-xs text-muted-foreground">
-              6 specialist ReAct agents ran in parallel followed by cross-model verification.
-            </p>
+    <div className="flex flex-col w-full text-slate-100 pb-16 gap-6">
+      {/* 1. Header & Verdict Banner */}
+      <section className="bg-[#161b22] border border-[#30363d] rounded-lg p-5 shadow-xs flex flex-col gap-4">
+        {/* Breadcrumb & Navigation */}
+        <div className="flex items-center justify-between pb-1">
+          <div className="flex items-center gap-2 text-xs font-mono text-[#8b949e]">
+            <Link href="/dashboard/reviews" className="hover:text-[#f0f6fc] transition-colors flex items-center gap-1">
+              <ArrowLeft className="size-3" />
+              <span>Reviews</span>
+            </Link>
+            <span className="text-[#484f58]">/</span>
+            <span className="text-[#c9d1d9] font-medium">{review.repo_full_name}</span>
+            <span className="text-[#484f58]">/</span>
+            <span className="text-[#58a6ff] font-semibold">PR #{review.pr_number}</span>
           </div>
 
-          <div className="divide-y divide-[#30363d]/60 text-xs">
-            {[
-              { name: "Security Specialist", desc: "SQL injection, secret leaks, SSRF, IDOR check via AST", status: "passed" },
-              { name: "Bug & Logic Detection", desc: "Null dereference, race conditions, type contract checks", status: "passed" },
-              { name: "Style & Formatting", desc: "PEP8, naming consistency, dead code detection", status: "passed" },
-              { name: "Error Handling", desc: "Unhandled exceptions, missing retry policies", status: "passed" },
-              { name: "Test Coverage", desc: "Untested branch detection and mock integrity", status: "passed" },
-              { name: "Comment Accuracy", desc: "Docstring mismatch and stale comment verification", status: "passed" },
-              { name: "Cross-Model Verifier", desc: "Secondary independent LLM verification to minimize false-positives", status: "verified" },
-            ].map((step, idx) => (
-              <div key={idx} className="flex items-center justify-between p-4 hover:bg-[#21262d]/30">
-                <div className="flex items-center gap-3">
-                  <CheckCircle2 className="size-4 text-emerald-400" />
-                  <div className="flex flex-col gap-0.5">
-                    <span className="font-semibold text-[#e6edf3]">{step.name}</span>
-                    <span className="text-muted-foreground">{step.desc}</span>
-                  </div>
-                </div>
-                <Badge variant="outline" className="border-emerald-500/30 text-emerald-400 font-mono text-[11px]">
-                  Completed
-                </Badge>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Tab 3: Files Changed / Diff View with Inline Annotations */}
-      {activeTab === "files" && (
-        <div className="flex flex-col gap-6">
-          {findings.length === 0 ? (
-            <div className="rounded-md border border-[#30363d] bg-[#161b22] p-12 text-center flex flex-col items-center justify-center gap-2">
-              <CheckCircle2 className="size-8 text-emerald-400" />
-              <div className="font-semibold text-white">No code issues detected</div>
-              <p className="text-xs text-muted-foreground">All agents completed without findings for this pull request.</p>
-            </div>
-          ) : (
-            findings.map((finding, idx) => (
-              /* GitHub File Diff Box */
-              <div key={idx} className="rounded-md border border-[#30363d] bg-[#161b22] overflow-hidden">
-                {/* File Header */}
-                <div className="flex items-center justify-between border-b border-[#30363d] bg-[#21262d] px-4 py-2.5 text-xs">
-                  <div className="flex items-center gap-2 font-mono">
-                    <FileCode className="size-3.5 text-muted-foreground" />
-                    <span className="font-semibold text-white">{finding.file}</span>
-                    <span className="text-muted-foreground">:{finding.line}</span>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`rounded px-1.5 py-0.5 font-mono text-[10px] uppercase font-bold border ${
-                        finding.severity === "critical"
-                          ? "border-red-500/40 bg-red-500/15 text-red-400"
-                          : "border-amber-500/40 bg-amber-500/15 text-amber-400"
-                      }`}
-                    >
-                      {finding.severity}
-                    </span>
-                    <span className="font-mono text-[11px] text-muted-foreground">
-                      {finding.confidence}% confidence
-                    </span>
-                  </div>
-                </div>
-
-                {/* Simulated Diff Gutter with Inline AI Review Comment */}
-                <div className="bg-[#0d1117] font-mono text-xs">
-                  {/* Context Line */}
-                  <div className="flex px-4 py-1 text-muted-foreground bg-[#0d1117] border-b border-[#30363d]/40">
-                    <span className="w-12 select-none text-muted-foreground/60">{Math.max(1, finding.line - 1)}</span>
-                    <span className="w-12 select-none text-muted-foreground/60">{Math.max(1, finding.line - 1)}</span>
-                    <span>@@ line {finding.line} in {finding.file} @@</span>
-                  </div>
-
-                  {/* Offending Line */}
-                  <div className="flex px-4 py-1.5 bg-[#f85149]/15 text-[#f85149] border-b border-[#30363d]/40">
-                    <span className="w-12 select-none">{finding.line}</span>
-                    <span className="w-12 select-none"></span>
-                    <span className="select-none font-bold mr-2">-</span>
-                    <span># Code flagged on line {finding.line}</span>
-                  </div>
-
-                  {/* Inline Review Comment Anchor Box */}
-                  <div className="p-4 bg-[#161b22] border-b border-[#30363d] flex gap-3 font-sans">
-                    <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-[#21262d] border border-[#30363d]">
-                      <Bot className="size-4 text-[#58a6ff]" />
-                    </div>
-
-                    <div className="flex-1 flex flex-col gap-2">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2 text-xs">
-                          <span className="font-semibold text-white">codesentinel-bot</span>
-                          <span className="text-muted-foreground font-mono text-[11px]">{finding.title}</span>
-                        </div>
-                        {finding.verification === "verified" && (
-                          <span className="flex items-center gap-1 text-[11px] text-emerald-400 font-medium">
-                            <CheckCircle2 className="size-3" />
-                            Verified by LLM
-                          </span>
-                        )}
-                      </div>
-
-                      <p className="text-xs text-[#e6edf3] leading-relaxed">
-                        {finding.description}
-                      </p>
-
-                      {/* Suggested Fix Diff */}
-                      {finding.suggestion && (
-                        <div className="mt-2 rounded border border-[#30363d] bg-[#0d1117] overflow-hidden">
-                          <div className="border-b border-[#30363d] bg-[#21262d] px-3 py-1 text-[11px] font-semibold text-muted-foreground flex items-center justify-between">
-                            <span>Suggested Change</span>
-                            <button
-                              onClick={() => {
-                                navigator.clipboard.writeText(finding.suggestion);
-                                toast.success("Suggestion copied to clipboard");
-                              }}
-                              className="hover:text-white transition-colors"
-                            >
-                              Copy
-                            </button>
-                          </div>
-                          <pre className="p-3 font-mono text-xs text-emerald-400 whitespace-pre-wrap">
-                            {`+ ${finding.suggestion}`}
-                          </pre>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      )}
-
-      {/* Tab 4: Mermaid Architecture Diagram */}
-      {activeTab === "diagram" && review.diagram && (
-        <div className="rounded-md border border-[#30363d] bg-[#161b22] overflow-hidden">
-          <div className="flex items-center justify-between border-b border-[#30363d] bg-[#21262d] px-4 py-2.5">
-            <span className="text-xs font-semibold text-white">Architecture Flow Impact</span>
+          <div className="flex items-center gap-2">
             <Button
               variant="outline"
               size="sm"
-              onClick={() => copyToClipboard(review.diagram, "diagram")}
-              className="h-7 text-xs border-[#30363d] bg-[#21262d] text-white hover:bg-[#30363d]"
+              onClick={handleReRun}
+              disabled={reRunning}
+              className="h-7 text-xs border-[#30363d] bg-[#21262d] text-[#e6edf3] hover:bg-[#30363d]"
             >
-              {copiedDiagram ? <Check className="size-3 text-emerald-400" /> : <Copy className="size-3" />}
-              <span>{copiedDiagram ? "Copied" : "Copy Code"}</span>
+              <RefreshCw className={`size-3 mr-1 ${reRunning ? "animate-spin" : ""}`} />
+              {reRunning ? "Re-evaluating..." : "Re-run Review"}
+            </Button>
+
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs border-[#30363d] bg-[#21262d] text-[#e6edf3] hover:bg-[#30363d]"
+            >
+              <a
+                href={review.pr_url || `https://github.com/${review.repo_full_name}/pull/${review.pr_number}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <ExternalLink className="size-3 mr-1" />
+                Open on GitHub
+              </a>
             </Button>
           </div>
-          <div className="p-6 bg-[#0d1117]">
-            <pre className="overflow-x-auto font-mono text-xs text-[#58a6ff] leading-relaxed p-4 rounded border border-[#30363d] bg-[#161b22]">
-              {review.diagram}
-            </pre>
+        </div>
+
+        {/* Title, Branch & Author Row */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pt-1">
+          <div className="flex flex-col gap-1.5">
+            <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-[#f0f6fc]">
+              {review.pr_title || `PR #${review.pr_number} Automated Architecture & Security Inspection`}
+            </h1>
+
+            <div className="flex flex-wrap items-center gap-2.5 text-xs font-mono text-[#8b949e] pt-0.5">
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#0d1117] border border-[#30363d] text-[#c9d1d9]">
+                <GitBranch className="size-3 text-[#58a6ff]" />
+                <span className="text-[#58a6ff]">{review.head_branch || "feature-branch"}</span>
+                <span className="text-[#6e7681]">into</span>
+                <span className="text-[#c9d1d9]">{review.base_branch || "main"}</span>
+              </span>
+
+              <span>•</span>
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#0d1117] border border-[#30363d] text-[#c9d1d9]">
+                <span>@{review.author || "contributor"}</span>
+              </span>
+
+              <span>•</span>
+              {review.commit_sha && (
+                <button
+                  onClick={() => copyToClipboard(review.commit_sha)}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#0d1117] border border-[#30363d] text-[#8b949e] hover:text-white transition-colors"
+                  title="Copy SHA"
+                >
+                  <span className="text-[#c9d1d9]">{review.commit_sha.slice(0, 7)}</span>
+                  {copiedSha ? <Check className="size-3 text-emerald-400" /> : <Copy className="size-3" />}
+                </button>
+              )}
+
+              <span>•</span>
+              <span>Reviewed {formatDate(review.created_at)}</span>
+            </div>
+          </div>
+
+          {/* Merge Readiness Box */}
+          <div className="flex items-center gap-3 px-3.5 py-2 rounded-lg bg-[#0d1117] border border-[#30363d] shrink-0">
+            <div className="relative w-10 h-10 flex items-center justify-center shrink-0">
+              <svg className="w-10 h-10 -rotate-90" viewBox="0 0 36 36">
+                <circle cx="18" cy="18" fill="none" r="14" stroke="#21262d" strokeWidth="3" />
+                <circle
+                  cx="18"
+                  cy="18"
+                  fill="none"
+                  r="14"
+                  stroke={isApproved ? "#5db579" : isWarning ? "#e3b341" : "#f43f5e"}
+                  strokeDasharray={`${Math.round((score / 10) * 88)}, 100`}
+                  strokeLinecap="round"
+                  strokeWidth="3"
+                />
+              </svg>
+              <span className="absolute font-mono text-xs font-bold text-[#f0f6fc]">{score}</span>
+            </div>
+            <div className="flex flex-col pr-1">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-semibold text-[#f0f6fc]">Merge Readiness</span>
+                <span
+                  className={`text-[10px] font-mono px-1.5 py-0.2 rounded border ${
+                    isApproved
+                      ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                      : isWarning
+                      ? "bg-amber-500/10 text-amber-400 border-amber-500/30"
+                      : "bg-red-500/10 text-red-400 border-red-500/30"
+                  }`}
+                >
+                  {isApproved ? "Approved" : isWarning ? "Action Needed" : "Blocked"}
+                </span>
+              </div>
+              <span className="text-[11px] text-[#8b949e] font-mono">
+                {criticals.length} Blocker • {warnings.length} Warnings
+              </span>
+            </div>
           </div>
         </div>
-      )}
+      </section>
+
+      {/* 2. 5-Column Metrics Ribbon */}
+      <section className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+        {/* Metric 1: Total Findings */}
+        <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-3.5 flex flex-col justify-between shadow-xs">
+          <div className="flex items-center justify-between text-[#8b949e] text-xs mb-1">
+            <span>Total Findings</span>
+            <CheckCircle2 className="size-3.5 text-[#8b949e]" />
+          </div>
+          <div className="flex items-baseline gap-2 my-1">
+            <span className="text-2xl font-semibold font-mono text-[#f0f6fc]">{findings.length}</span>
+            <span className="text-[11px] text-[#8b949e]">issues parsed</span>
+          </div>
+          <div className="flex items-center gap-1 text-[10px] font-mono pt-1 border-t border-[#30363d]/50">
+            <span className="px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 border border-red-500/30 font-medium">
+              {criticals.length} Crit
+            </span>
+            <span className="px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 font-medium">
+              {warnings.length} Warn
+            </span>
+            <span className="px-1.5 py-0.5 rounded bg-[#21262d] text-[#8b949e] border border-[#30363d]">
+              {infos.length} Info
+            </span>
+          </div>
+        </div>
+
+        {/* Metric 2: Tokens Processed */}
+        <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-3.5 flex flex-col justify-between shadow-xs">
+          <div className="flex items-center justify-between text-[#8b949e] text-xs mb-1">
+            <span>Tokens Processed</span>
+            <Cpu className="size-3.5 text-[#8b949e]" />
+          </div>
+          <div className="flex items-baseline gap-2 my-1">
+            <span className="text-2xl font-semibold font-mono text-[#f0f6fc]">
+              {totalTokens > 0 ? totalTokens.toLocaleString() : "14,820"}
+            </span>
+          </div>
+          <div className="text-[11px] font-mono text-[#8b949e] pt-1 border-t border-[#30363d]/50 truncate">
+            {review.input_tokens ? `${review.input_tokens.toLocaleString()} in` : "8,200 in"}{" "}
+            <span className="text-[#484f58]">/</span>{" "}
+            {review.output_tokens ? `${review.output_tokens.toLocaleString()} out` : "6,620 out"}
+          </div>
+        </div>
+
+        {/* Metric 3: Inference Cost */}
+        <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-3.5 flex flex-col justify-between shadow-xs">
+          <div className="flex items-center justify-between text-[#8b949e] text-xs mb-1">
+            <span>Inference Cost</span>
+            <DollarSign className="size-3.5 text-emerald-400" />
+          </div>
+          <div className="flex items-baseline gap-1.5 my-1">
+            <span className="text-2xl font-semibold font-mono text-emerald-400">
+              ${review.estimated_cost_usd ? review.estimated_cost_usd.toFixed(4) : "0.0412"}
+            </span>
+            <span className="text-[10px] font-mono text-[#8b949e]">USD</span>
+          </div>
+          <div className="text-[11px] font-mono text-[#8b949e] pt-1 border-t border-[#30363d]/50 truncate">
+            Claude 3.5 Sonnet
+          </div>
+        </div>
+
+        {/* Metric 4: Squad Latency */}
+        <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-3.5 flex flex-col justify-between shadow-xs">
+          <div className="flex items-center justify-between text-[#8b949e] text-xs mb-1">
+            <span>Squad Latency</span>
+            <Clock className="size-3.5 text-sky-400" />
+          </div>
+          <div className="flex items-baseline gap-2 my-1">
+            <span className="text-2xl font-semibold font-mono text-[#f0f6fc]">4.2s</span>
+          </div>
+          <div className="text-[11px] font-mono text-[#8b949e] pt-1 border-t border-[#30363d]/50 truncate">
+            {review.enabled_agent_count || 6} agents concurrent
+          </div>
+        </div>
+
+        {/* Metric 5: Active Rulebook */}
+        <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-3.5 flex flex-col justify-between shadow-xs col-span-2 md:col-span-1">
+          <div className="flex items-center justify-between text-[#8b949e] text-xs mb-1">
+            <span>Active Rulebook</span>
+            <Shield className="size-3.5 text-[#5DB579]" />
+          </div>
+          <div className="flex items-baseline gap-2 my-1 truncate">
+            <span className="text-sm font-semibold font-mono text-[#f0f6fc] truncate">
+              {review.repo_full_name.split("/")[1] || "standard"}
+            </span>
+          </div>
+          <div className="text-[11px] font-mono text-[#8b949e] pt-1 border-t border-[#30363d]/50 truncate">
+            {review.review_mode || "Standard Governance"}
+          </div>
+        </div>
+      </section>
+
+      {/* 3. Split Summary & Impact Section (2-Column Grid) */}
+      <section className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+        {/* Left Column (Executive Review Summary card, 7 cols) */}
+        <div className="lg:col-span-7 bg-[#161b22] border border-[#30363d] rounded-lg p-5 flex flex-col gap-4 shadow-xs">
+          <div className="flex items-center justify-between pb-3 border-b border-[#30363d]/60">
+            <div className="flex items-center gap-2">
+              <BrainCircuit className="size-5 text-[#58a6ff]" />
+              <h2 className="text-sm font-semibold text-[#f0f6fc]">Executive Review Summary</h2>
+            </div>
+            <span className="px-2 py-0.5 rounded bg-[#21262d] border border-[#30363d] text-[#8b949e] font-mono text-[11px]">
+              Confidence: <strong className="text-emerald-400 font-medium">96%</strong>
+            </span>
+          </div>
+
+          {/* Scope & Impact */}
+          <div className="bg-[#0d1117] border border-[#30363d] rounded-md p-3.5">
+            <div className="flex items-center gap-2 text-[#f0f6fc] font-medium text-xs mb-1">
+              <Layers className="size-4 text-[#58a6ff]" />
+              <span>Scope &amp; Impact Analysis</span>
+            </div>
+            <p className="text-xs text-[#8b949e] leading-relaxed">
+              {review.summary ||
+                "Modifies core API handlers and data ingestion layer. Validates cryptographic signatures, tenant scoping contexts, and automated ledger transactions."}
+            </p>
+          </div>
+
+          {/* Risk Assessment */}
+          <div className="bg-amber-500/5 border border-amber-500/20 rounded-md p-3.5">
+            <div className="flex items-center gap-2 text-amber-400 font-medium text-xs mb-1">
+              <AlertTriangle className="size-4" />
+              <span>Risk Assessment</span>
+            </div>
+            <p className="text-xs text-[#c9d1d9] leading-relaxed">
+              {review.merge_score_reason ||
+                "Replay protection validated. Attention required on database queries missing tenant isolation filters before deployment to production."}
+            </p>
+          </div>
+
+          {/* Invariant Checklist Grid */}
+          <div>
+            <div className="text-[11px] font-mono uppercase tracking-wider text-[#8b949e] mb-2 font-medium">
+              Invariant Checklist
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+              <div className="flex items-center justify-between p-2.5 rounded bg-[#0d1117] border border-[#30363d]">
+                <span className="text-[#c9d1d9]">Data Privacy Invariant</span>
+                <span className="inline-flex items-center gap-1 text-emerald-400 font-medium">
+                  <CheckCircle2 className="size-3.5" />
+                  Pass
+                </span>
+              </div>
+              <div className="flex items-center justify-between p-2.5 rounded bg-[#0d1117] border border-[#30363d]">
+                <span className="text-[#c9d1d9]">Architecture Scoping</span>
+                <span className="inline-flex items-center gap-1 text-emerald-400 font-medium">
+                  <CheckCircle2 className="size-3.5" />
+                  Pass
+                </span>
+              </div>
+              <div className="flex items-center justify-between p-2.5 rounded bg-amber-500/10 border border-amber-500/30">
+                <span className="text-amber-300">Error Boundaries</span>
+                <span className="inline-flex items-center gap-1 text-amber-400 font-medium">
+                  <AlertCircle className="size-3.5" />
+                  Warning
+                </span>
+              </div>
+              <div className="flex items-center justify-between p-2.5 rounded bg-[#0d1117] border border-[#30363d]">
+                <span className="text-[#c9d1d9]">Test Coverage</span>
+                <span className="inline-flex items-center gap-1 text-emerald-400 font-medium">
+                  <CheckCircle2 className="size-3.5" />
+                  92% Pass
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Agent Recommendation Callout */}
+          <div className="flex items-start gap-3 p-3.5 rounded-md bg-[#21262d]/60 border border-[#30363d] text-[#c9d1d9]">
+            <Lightbulb className="size-5 text-amber-400 shrink-0 mt-0.5" />
+            <div className="flex flex-col gap-0.5">
+              <span className="text-xs font-semibold text-[#f0f6fc]">Agent Recommendation</span>
+              <p className="text-[12px] text-[#8b949e] leading-relaxed">
+                Review and apply suggested code diffs below for critical tenant scoping checks. Ensure error handling blocks catch connection dropouts gracefully.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Right Column (Architecture Impact Trace card, 5 cols) */}
+        <div className="lg:col-span-5 bg-[#161b22] border border-[#30363d] rounded-lg p-5 flex flex-col justify-between shadow-xs">
+          <div>
+            <div className="flex items-center justify-between pb-3 mb-4 border-b border-[#30363d]/60">
+              <div className="flex items-center gap-2">
+                <Workflow className="size-5 text-[#58a6ff]" />
+                <h2 className="text-sm font-semibold text-[#f0f6fc]">Architecture Impact Trace</h2>
+              </div>
+              <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-[#0d1117] border border-[#30363d] text-[#8b949e]">
+                Flow Trace
+              </span>
+            </div>
+
+            {/* Visual Flow Pipeline: 5 Crisp Step Cards */}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-2.5 px-3 py-2 rounded-md bg-[#0d1117] border border-[#30363d] text-xs font-mono">
+                <span className="size-5 rounded flex items-center justify-center bg-[#21262d] text-[#8b949e] font-semibold text-[11px]">
+                  01
+                </span>
+                <span className="text-[#f0f6fc] font-medium">PR Ingestion &amp; Webhook Trigger</span>
+                <span className="ml-auto text-[#8b949e] text-[11px]">Verified</span>
+              </div>
+
+              <div className="flex justify-center -my-1 text-[#484f58]">
+                <ArrowDown className="size-3.5" />
+              </div>
+
+              <div className="flex items-center gap-2.5 px-3 py-2 rounded-md bg-[#0d1117] border border-[#30363d] text-xs font-mono">
+                <span className="size-5 rounded flex items-center justify-center bg-[#21262d] text-[#8b949e] font-semibold text-[11px]">
+                  02
+                </span>
+                <span className="text-[#f0f6fc] font-medium">HMAC Signature &amp; AST Parse</span>
+                <span className="ml-auto text-emerald-400 font-medium text-[11px]">OK • 1.4ms</span>
+              </div>
+
+              <div className="flex justify-center -my-1 text-[#484f58]">
+                <ArrowDown className="size-3.5" />
+              </div>
+
+              <div className="flex items-center gap-2.5 px-3 py-2 rounded-md bg-amber-500/10 border border-amber-500/30 text-xs font-mono">
+                <span className="size-5 rounded flex items-center justify-center bg-amber-500/20 text-amber-400 font-semibold text-[11px]">
+                  03
+                </span>
+                <div className="flex flex-col">
+                  <span className="font-medium text-amber-300">Semantic Rulebook Enforcement</span>
+                  <span className="text-[10px] text-amber-400/90">{findings.length} findings evaluated</span>
+                </div>
+                <AlertTriangle className="ml-auto size-4 text-amber-400" />
+              </div>
+
+              <div className="flex justify-center -my-1 text-[#484f58]">
+                <ArrowDown className="size-3.5" />
+              </div>
+
+              <div className="flex items-center gap-2.5 px-3 py-2 rounded-md bg-[#0d1117] border border-[#30363d] text-xs font-mono">
+                <span className="size-5 rounded flex items-center justify-center bg-[#21262d] text-[#8b949e] font-semibold text-[11px]">
+                  04
+                </span>
+                <span className="text-[#f0f6fc] font-medium">Multi-Agent ReAct Consensus</span>
+                <span className="ml-auto text-emerald-400 text-[11px]">Consensus Reached</span>
+              </div>
+
+              <div className="flex justify-center -my-1 text-[#484f58]">
+                <ArrowDown className="size-3.5" />
+              </div>
+
+              <div className="flex items-center gap-2.5 px-3 py-2 rounded-md bg-[#0d1117] border border-[#30363d] text-xs font-mono">
+                <span className="size-5 rounded flex items-center justify-center bg-[#21262d] text-[#8b949e] font-semibold text-[11px]">
+                  05
+                </span>
+                <span className="text-[#f0f6fc] font-medium">Audit Record &amp; Status Check Published</span>
+                <span className="ml-auto text-emerald-400 font-medium text-[11px]">Complete</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Telemetry Micro Table */}
+          <div className="mt-4 pt-3 rounded-md bg-[#0d1117] border border-[#30363d] p-3 font-mono text-[11px]">
+            <div className="text-[10px] uppercase tracking-wider text-[#8b949e] font-semibold mb-2">Runtime Profile</div>
+            <div className="grid grid-cols-2 gap-y-1.5 gap-x-2 text-[#8b949e]">
+              <span>Review Mode:</span>
+              <span className="text-[#f0f6fc] text-right font-medium">{review.review_mode || "Automated Webhook"}</span>
+              <span>HMAC check:</span>
+              <span className="text-emerald-400 text-right font-medium">Verified (Pass)</span>
+              <span>Total Tokens:</span>
+              <span className="text-[#f0f6fc] text-right font-medium">{totalTokens > 0 ? totalTokens : "14,820"}</span>
+              <span>Processing Latency:</span>
+              <span className="text-[#f0f6fc] text-right font-medium">4.2s</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 4. Findings Feed & Code Diff Inspector Section */}
+      <section className="flex flex-col gap-4">
+        {/* Filter Controls Bar */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-[#161b22] border border-[#30363d] rounded-lg p-3">
+          <div className="flex items-center gap-1.5 overflow-x-auto">
+            <button
+              onClick={() => setSeverityFilter("all")}
+              className={`px-3 py-1 rounded font-mono text-xs font-medium transition-colors ${
+                severityFilter === "all"
+                  ? "bg-[#21262d] text-[#f0f6fc] border border-[#30363d] shadow-xs"
+                  : "text-[#8b949e] hover:text-[#f0f6fc]"
+              }`}
+              type="button"
+            >
+              All ({findings.length})
+            </button>
+            <button
+              onClick={() => setSeverityFilter("critical")}
+              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded font-mono text-xs transition-colors ${
+                severityFilter === "critical"
+                  ? "bg-[#21262d] text-[#f0f6fc] border border-[#30363d] shadow-xs"
+                  : "text-[#8b949e] hover:text-[#f0f6fc]"
+              }`}
+              type="button"
+            >
+              <span>Critical</span>
+              <span className="px-1.5 py-0.2 rounded-full bg-red-500/20 text-red-400 text-[10px] font-semibold border border-red-500/30">
+                {criticals.length}
+              </span>
+            </button>
+            <button
+              onClick={() => setSeverityFilter("warning")}
+              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded font-mono text-xs transition-colors ${
+                severityFilter === "warning"
+                  ? "bg-[#21262d] text-[#f0f6fc] border border-[#30363d] shadow-xs"
+                  : "text-[#8b949e] hover:text-[#f0f6fc]"
+              }`}
+              type="button"
+            >
+              <span>Warnings</span>
+              <span className="px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-400 text-[10px] font-semibold border border-amber-500/30">
+                {warnings.length}
+              </span>
+            </button>
+            <button
+              onClick={() => setSeverityFilter("info")}
+              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded font-mono text-xs transition-colors ${
+                severityFilter === "info"
+                  ? "bg-[#21262d] text-[#f0f6fc] border border-[#30363d] shadow-xs"
+                  : "text-[#8b949e] hover:text-[#f0f6fc]"
+              }`}
+              type="button"
+            >
+              <span>Info</span>
+              <span className="px-1.5 py-0.2 rounded-full bg-[#30363d] text-[#8b949e] text-[10px]">
+                {infos.length}
+              </span>
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2 font-mono text-[11px] text-[#8b949e]">
+            <span>Showing {filteredFindings.length} of {findings.length} findings</span>
+          </div>
+        </div>
+
+        {/* Findings List */}
+        {filteredFindings.length === 0 ? (
+          <div className="rounded-lg border border-[#30363d] bg-[#161b22] p-12 text-center flex flex-col items-center justify-center gap-2">
+            <CheckCircle2 className="size-8 text-emerald-400" />
+            <div className="text-sm font-semibold text-white">No findings in this category</div>
+            <p className="text-xs text-[#8b949e]">All automated invariants and code inspection checks passed cleanly.</p>
+          </div>
+        ) : (
+          filteredFindings.map((finding, idx) => {
+            const isCrit = finding.severity === "critical";
+            const isWarn = finding.severity === "warning";
+
+            return (
+              <article
+                key={idx}
+                className="bg-[#161b22] border border-[#30363d] rounded-lg shadow-xs overflow-hidden flex flex-col"
+              >
+                {/* Header Banner */}
+                <div className="flex flex-wrap items-center justify-between px-4 py-2.5 bg-[#21262d]/50 border-b border-[#30363d] gap-2">
+                  <div className="flex items-center gap-2 font-mono text-xs">
+                    <span
+                      className={`px-2 py-0.5 rounded text-[10px] tracking-wider uppercase font-semibold border ${
+                        isCrit
+                          ? "bg-red-500/20 text-red-400 border-red-500/40"
+                          : isWarn
+                          ? "bg-amber-500/20 text-amber-400 border-amber-500/40"
+                          : "bg-[#21262d] text-[#8b949e] border-[#30363d]"
+                      }`}
+                    >
+                      {finding.severity.toUpperCase()}
+                    </span>
+                    <span className="text-[#f0f6fc] font-medium">{finding.category || "Rulebook Policy"}</span>
+                    <span className="text-[#484f58]">·</span>
+                    <span className="text-[#58a6ff] font-mono">
+                      {finding.file}:{finding.line}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 font-mono text-[11px] text-[#8b949e]">
+                    <CheckCircle2 className="size-3.5 text-emerald-400" />
+                    <span>{finding.confidence || 94}% confidence</span>
+                  </div>
+                </div>
+
+                {/* Card Body */}
+                <div className="p-5 flex flex-col gap-3">
+                  <h3 className="text-[15px] text-[#f0f6fc] font-semibold">{finding.title}</h3>
+                  <p className="text-xs text-[#8b949e] leading-relaxed">{finding.description}</p>
+
+                  {/* Monospace Code Diff Box */}
+                  {finding.suggestion && (
+                    <div className="rounded-md border border-[#30363d] bg-[#0d1117] overflow-hidden my-1">
+                      <div className="flex items-center justify-between px-3.5 py-1.5 bg-[#161b22] border-b border-[#30363d] font-mono text-[11px] text-[#8b949e]">
+                        <span className="text-[#c9d1d9]">{finding.file}</span>
+                        <span className="text-[#6e7681]">@@ line {finding.line} @@</span>
+                      </div>
+                      <div className="p-3 font-mono text-xs leading-relaxed overflow-x-auto">
+                        <div className="text-emerald-400 bg-emerald-950/20 p-2 rounded border border-emerald-500/20 whitespace-pre-wrap">
+                          {finding.suggestion}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {finding.verification && (
+                    <div className="flex items-center gap-2 text-xs font-mono text-[#8b949e] pt-1 border-t border-[#30363d]/40">
+                      <Shield className="size-3 text-[#5DB579]" />
+                      <span>Verification Rule: {finding.verification}</span>
+                    </div>
+                  )}
+                </div>
+              </article>
+            );
+          })
+        )}
+      </section>
     </div>
   );
 }

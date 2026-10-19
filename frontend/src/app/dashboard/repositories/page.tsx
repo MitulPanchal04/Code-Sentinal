@@ -15,6 +15,8 @@ import {
   ShieldCheck,
   Zap,
   BookOpen,
+  Plus,
+  ArrowRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,6 +31,7 @@ export default function RepositoriesPage() {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState("");
+  const [profileFilter, setProfileFilter] = useState<string>("all");
 
   const fetchData = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
@@ -53,45 +56,50 @@ export default function RepositoriesPage() {
   }, [fetchData]);
 
   const filtered = useMemo(() => {
-    if (!search.trim()) return installations;
-    const q = search.toLowerCase();
-    return installations.filter((r) =>
-      r.repo_full_name.toLowerCase().includes(q)
-    );
+    return installations.filter((r) => {
+      if (search.trim()) {
+        const q = search.toLowerCase();
+        if (!r.repo_full_name.toLowerCase().includes(q)) return false;
+      }
+      return true;
+    });
   }, [installations, search]);
 
   return (
-    <div className="flex flex-col gap-5">
-      {/* GitHub Repositories Toolbar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#30363d] pb-4">
-        <div className="flex items-center gap-2 flex-1 max-w-md">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Find a repository..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="h-8 pl-9 text-xs border-[#30363d] bg-[#0d1117] text-[#e6edf3]"
-            />
+    <div className="flex flex-col w-full text-slate-100 pb-12">
+      {/* 1. Header Section */}
+      <header className="flex flex-col md:flex-row md:items-end justify-between gap-4 py-6 border-b border-[#30363d]/70">
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-center gap-2 text-xs font-mono text-[#8b949e] tracking-tight">
+            <span>Governance</span>
+            <span className="text-[#484f58]">/</span>
+            <span className="text-[#c9d1d9] font-medium">Repository Management</span>
+            <span className="px-1.5 py-0.5 rounded text-[10px] bg-[#161b22] border border-[#30363d] text-[#58a6ff] font-mono ml-1.5">
+              {installations.length} CONNECTED
+            </span>
           </div>
+          <h1 className="text-xl md:text-2xl font-semibold tracking-tight text-[#f0f6fc] flex items-center gap-3">
+            Repository Governance &amp; Policy Hub
+          </h1>
+          <p className="text-xs md:text-sm text-[#8b949e] max-w-2xl font-normal leading-relaxed">
+            Centralized policy configuration, custom rulebooks, and agent strictness parameters across connected organization repositories.
+          </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        {/* Right Controls */}
+        <div className="flex items-center gap-2.5 self-start md:self-auto shrink-0">
           <Button
             variant="outline"
             size="sm"
             onClick={() => fetchData(true)}
             disabled={refreshing || loading}
-            className="h-8 text-xs border-[#30363d] bg-[#21262d] text-[#e6edf3] hover:bg-[#30363d]"
+            className="h-8 text-xs border-[#30363d] bg-[#161b22] hover:bg-[#21262d] text-[#c9d1d9] hover:text-[#f0f6fc]"
           >
-            <RefreshCw
-              data-icon="inline-start"
-              className={refreshing ? "animate-spin" : ""}
-            />
-            {refreshing ? "Syncing..." : "Sync Repos"}
+            <RefreshCw className={`size-3.5 mr-1 ${refreshing ? "animate-spin" : ""}`} />
+            {refreshing ? "Syncing..." : "Sync Installations"}
           </Button>
 
-          <Button asChild size="sm" className="h-8 text-xs bg-[#238636] hover:bg-[#2ea043] text-white">
+          <Button asChild size="sm" className="h-8 text-xs bg-[#f0f6fc] hover:bg-white text-[#0d1117] font-semibold">
             <a
               href={
                 process.env.NEXT_PUBLIC_GITHUB_APP_URL ||
@@ -100,25 +108,44 @@ export default function RepositoriesPage() {
               target="_blank"
               rel="noopener noreferrer"
             >
-              <BookMarked data-icon="inline-start" />
-              New Repository
+              <Plus className="size-3.5 mr-1" />
+              Add Repository
             </a>
           </Button>
+        </div>
+      </header>
+
+      {/* 2. Repositories Filter Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-4 border-b border-[#30363d]/60">
+        <div className="flex items-center gap-2 flex-1 max-w-md">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-[#8b949e]" />
+            <Input
+              placeholder="Filter repositories by name..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="h-8 pl-8 text-xs border-[#30363d] bg-[#0d1117] text-[#e6edf3] placeholder-[#8b949e]"
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 text-xs text-[#8b949e] font-mono">
+          <span>Showing {filtered.length} of {installations.length} repositories</span>
         </div>
       </div>
 
       {error && (
-        <Alert variant="destructive" className="bg-[#f85149]/10 border-[#f85149]/30 text-[#f85149]">
+        <Alert variant="destructive" className="mt-4 bg-[#f85149]/10 border-[#f85149]/30 text-[#f85149]">
           <AlertCircle className="size-4" />
           <AlertTitle>Connection Error</AlertTitle>
           <AlertDescription className="text-xs">{error}</AlertDescription>
         </Alert>
       )}
 
-      {/* GitHub Repository Rows */}
+      {/* 3. High-Density Repository Rows */}
       {loading ? (
-        <div className="flex flex-col divide-y divide-[#30363d]">
-          {Array.from({ length: 4 }).map((_, i) => (
+        <div className="flex flex-col divide-y divide-[#30363d]/60 pt-2">
+          {Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="py-5 flex flex-col gap-2">
               <Skeleton className="h-5 w-48 bg-[#21262d]" />
               <Skeleton className="h-3 w-80 bg-[#21262d]" />
@@ -126,13 +153,13 @@ export default function RepositoriesPage() {
           ))}
         </div>
       ) : installations.length === 0 ? (
-        <div className="rounded-md border border-[#30363d] bg-[#161b22] p-16 text-center flex flex-col items-center justify-center gap-2">
-          <BookMarked className="size-8 text-muted-foreground" />
+        <div className="rounded-lg border border-[#30363d] bg-[#161b22] p-16 text-center flex flex-col items-center justify-center gap-2 my-6">
+          <BookMarked className="size-8 text-[#8b949e]" />
           <div className="text-sm font-semibold text-white">No repositories connected</div>
-          <p className="max-w-md text-xs text-muted-foreground">
+          <p className="max-w-md text-xs text-[#8b949e]">
             Install the CodeSentinel GitHub App on your account or organization to enable multi-agent review on PRs.
           </p>
-          <Button asChild size="sm" className="mt-3 text-xs bg-[#238636] hover:bg-[#2ea043] text-white">
+          <Button asChild size="sm" className="mt-3 text-xs bg-[#f0f6fc] hover:bg-white text-[#0d1117] font-semibold">
             <a
               href={
                 process.env.NEXT_PUBLIC_GITHUB_APP_URL ||
@@ -146,7 +173,7 @@ export default function RepositoriesPage() {
           </Button>
         </div>
       ) : (
-        <div className="divide-y divide-[#30363d]">
+        <div className="divide-y divide-[#30363d]/60 bg-[#161b22] border border-[#30363d] rounded-lg mt-4 overflow-hidden px-4 sm:px-6 shadow-xs">
           {filtered.map((repo) => (
             <RepoRow key={`${repo.installation_id}-${repo.repo_full_name}`} repo={repo} />
           ))}
@@ -198,28 +225,28 @@ function RepoRow({ repo }: { repo: Installation }) {
     const prof = settings?.profile || "standard";
     if (prof === "lenient") {
       return (
-        <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/60 px-2.5 py-0.5 text-[11px] font-medium text-foreground">
-          <Zap size={11} className="text-amber-500" /> Rapid Dev
+        <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-medium text-amber-400">
+          <Zap className="size-3 text-amber-400" /> Rapid Dev
         </span>
       );
     }
     if (prof === "strict") {
       return (
-        <span className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-0.5 text-[11px] font-medium text-primary">
-          <ShieldCheck size={11} /> High Assurance
+        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-400">
+          <ShieldCheck className="size-3" /> High Assurance
         </span>
       );
     }
     if (prof === "custom") {
       return (
-        <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/60 px-2.5 py-0.5 text-[11px] font-medium text-foreground">
-          <SlidersHorizontal size={11} /> Custom Policy
+        <span className="inline-flex items-center gap-1 rounded-full border border-[#30363d] bg-[#21262d] px-2.5 py-0.5 text-[11px] font-medium text-slate-300">
+          <SlidersHorizontal className="size-3" /> Custom Policy
         </span>
       );
     }
     return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/60 px-2.5 py-0.5 text-[11px] font-medium text-foreground">
-        <Shield size={11} className="text-muted-foreground" /> Standard
+      <span className="inline-flex items-center gap-1 rounded-full border border-[#30363d] bg-[#21262d] px-2.5 py-0.5 text-[11px] font-medium text-slate-300">
+        <Shield className="size-3 text-[#8b949e]" /> Standard
       </span>
     );
   };
@@ -236,30 +263,30 @@ function RepoRow({ repo }: { repo: Installation }) {
           >
             {repo.repo_full_name}
           </a>
-          <span className="rounded-full border border-[#30363d] bg-[#21262d] px-2 py-0 text-[10px] font-mono text-muted-foreground">
+          <span className="rounded-full border border-[#30363d] bg-[#21262d] px-2 py-0 text-[10px] font-mono text-[#8b949e]">
             Public
           </span>
           <div className="ml-2">{renderProfileBadge()}</div>
         </div>
 
-        <p className="text-xs text-muted-foreground leading-relaxed">
+        <p className="text-xs text-[#8b949e] leading-relaxed">
           Automated CodeSentinel GitHub webhook integration with LangGraph ReAct agent pipeline.
         </p>
 
-        <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground pt-1">
+        <div className="flex flex-wrap items-center gap-4 text-xs text-[#8b949e] pt-1 font-mono">
           {/* Active Modules */}
-          <span className="text-xs text-muted-foreground">
+          <span>
             {settings ? `${settings.enabled_agents?.length ?? 6} of 6 modules` : "6 of 6 modules"}
           </span>
 
           {/* Rulebook count */}
           {settings?.rulebook?.trim() ? (
-            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-primary">
-              <BookOpen size={11} />
+            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[#5DB579]">
+              <BookOpen className="size-3" />
               Rulebook ({settings.rulebook.trim().split("\n").length} lines)
             </span>
           ) : (
-            <span className="text-[11px] text-muted-foreground">Default invariants</span>
+            <span className="text-[11px] text-[#8b949e]">Default invariants</span>
           )}
 
           {/* Model Tag */}
@@ -287,8 +314,8 @@ function RepoRow({ repo }: { repo: Installation }) {
           className="h-7 text-xs border-[#30363d] bg-[#21262d] text-[#e6edf3] hover:bg-[#30363d]"
           title="Configure strictness profile, enabled agents, and custom rulebook"
         >
-          <SlidersHorizontal data-icon="inline-start" className="size-3.5 text-primary" />
-          Policy & Rules
+          <SlidersHorizontal className="size-3 mr-1 text-[#5DB579]" />
+          Policy &amp; Rules
         </Button>
 
         <Button
@@ -299,7 +326,7 @@ function RepoRow({ repo }: { repo: Installation }) {
           className="h-7 text-xs border-[#30363d] bg-[#21262d] text-[#e6edf3] hover:bg-[#30363d]"
           title="Sync existing open PRs for this installation"
         >
-          <RefreshCw data-icon="inline-start" className={`size-3.5 ${syncing ? "animate-spin" : ""}`} />
+          <RefreshCw className={`size-3 mr-1 ${syncing ? "animate-spin" : ""}`} />
           {syncing ? "Syncing..." : "Sync"}
         </Button>
 
@@ -310,7 +337,7 @@ function RepoRow({ repo }: { repo: Installation }) {
           className="h-7 text-xs border-[#30363d] bg-[#21262d] text-[#e6edf3] hover:bg-[#30363d]"
         >
           <Link href={`/dashboard/reviews?repo=${encodeURIComponent(repo.repo_full_name)}`}>
-            <GitPullRequest data-icon="inline-start" className="size-3.5" />
+            <GitPullRequest className="size-3 mr-1" />
             Pull Requests
           </Link>
         </Button>
@@ -319,7 +346,7 @@ function RepoRow({ repo }: { repo: Installation }) {
           asChild
           variant="ghost"
           size="sm"
-          className="h-7 text-xs text-muted-foreground hover:text-white"
+          className="h-7 text-xs text-[#8b949e] hover:text-white"
         >
           <a href={githubUrl} target="_blank" rel="noopener noreferrer">
             <ExternalLink className="size-3.5" />
