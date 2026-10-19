@@ -63,3 +63,38 @@ export function scoreColor(score: number): string {
 export function severityColor(severity: string): string {
   return severityBadgeClasses(severity);
 }
+
+export function reviewStatusBadge(status: string): string {
+  switch (status) {
+    case "complete":
+      return "bg-green-500/10 text-green-500";
+    case "failed":
+      return "bg-red-500/10 text-red-500";
+    case "not_reviewed":
+      return "bg-secondary text-muted-foreground";
+    default:
+      return "bg-yellow-500/10 text-yellow-500";
+  }
+}
+
+export function reviewStatusLabel(status: string): string {
+  switch (status) {
+    case "not_reviewed":
+      return "not reviewed";
+    case "pending":
+      return "in progress";
+    default:
+      return status;
+  }
+}
+
+export function prStateBadge(state: string | null | undefined): string {
+  switch (state) {
+    case "merged":
+      return "bg-purple-500/10 text-purple-500";
+    case "closed":
+      return "bg-red-500/10 text-red-500";
+    default:
+      return "bg-blue-500/10 text-blue-500";
+  }
+}

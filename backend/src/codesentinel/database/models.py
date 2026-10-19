@@ -60,6 +60,39 @@ class InstallationSettings(Base):
 
 
 
+class RepositorySettings(Base):
+    __tablename__ = "repository_settings"
+    __table_args__ = (
+        UniqueConstraint("installation_id", "repo_full_name", name="uq_repo_settings"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    installation_id = Column(BigInteger, nullable=False, index=True)
+    repo_full_name = Column(String(255), nullable=False, index=True)
+    profile = Column(String(20), nullable=False, default="standard")
+    rulebook = Column(Text, nullable=False, default="")
+    enabled_agents = Column(
+        JSONB,
+        default=lambda: [
+            "security",
+            "bugs",
+            "error_handling",
+            "style",
+            "test_coverage",
+            "comment_accuracy",
+        ],
+    )
+    min_severity = Column(String(20), nullable=False, default="info")
+    min_confidence = Column(Integer, nullable=False, default=75)
+    max_findings = Column(Integer, nullable=False, default=25)
+    ignore_paths = Column(JSONB, default=list)
+    critical_paths = Column(JSONB, default=list)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+
+
 class Review(Base):
     __tablename__ = "reviews"
     __table_args__ = (
@@ -75,6 +108,18 @@ class Review(Base):
     pr_number_commit_sha = Column(String(300), nullable=False)
     commit_sha = Column(String(40), nullable=False)
     status = Column(String(20), nullable=False, default="pending")
+    # Pull request metadata — populated by the install/sync path so that
+    # PRs that were never reviewed still show up in the dashboard.
+    pr_state = Column(String(20), nullable=True)
+    pr_title = Column(Text, default="")
+    pr_url = Column(String(500), default="")
+    author = Column(String(255), default="")
+    head_branch = Column(String(255), default="")
+    base_branch = Column(String(255), default="")
+    github_pr_id = Column(BigInteger, nullable=True)
+    repo_id = Column(BigInteger, nullable=True)
+    pr_created_at = Column(DateTime, nullable=True)
+    pr_updated_at = Column(DateTime, nullable=True)
     findings = Column(JSONB, default=list)
     summary = Column(Text, default="")
     diagram = Column(Text, default="")

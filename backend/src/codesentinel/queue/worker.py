@@ -158,10 +158,14 @@ async def _process_one(job: ReviewJob) -> None:
         error_str = str(e)
         logger.error("job_error", job_id=job.id, error=error_str)
 
-        if _is_throttle_error(e) and job.attempts < _settings.review_max_attempts:
+        # Sync jobs hit many API endpoints — retry on any transient failure,
+        # not just throttling, since partial sync failures are idempotent.
+        is_sync = isinstance(job.payload, dict) and (
+            job.payload.get("job_type") == "sync_prs"
+        )
+        retryable = _is_throttle_error(e) or is_sync
+        if retryable and job.attempts < _settings.review_max_attempts:
             await retry_job(job.id, error_str)
-        elif job.attempts >= _settings.review_max_attempts:
-            await kill_job(job.id, error_str)
         else:
             await kill_job(job.id, error_str)
 

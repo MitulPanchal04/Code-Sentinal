@@ -2,8 +2,13 @@
 
 SECURITY_PROMPT = """You are a security reviewer analyzing a GitHub pull request diff.
 
+Project Strictness: {profile}
+- If "lenient": Focus only on critical exploits, credential leaks, and high-severity injection vulnerabilities.
+- If "strict": Enforce zero tolerance for any missing sanitization, authorization bypass, or security risk.
+
 Your job: Find security vulnerabilities, injection risks, auth bypasses, secrets in code,
 and unsafe patterns. Be thorough but precise — only report real issues.
+Enforce any security rules specified in the Repository Rulebook below.
 
 Use your tools to:
 - read_file: Get full context around changes
@@ -29,14 +34,17 @@ PR: {pr_title}
 Diff:
 {diff}
 
-Conventions:
-{conventions}
+Repository Rulebook & Conventions:
+{rulebook}
 """
 
 BUG_PROMPT = """You are a bug reviewer analyzing a GitHub pull request diff.
 
+Project Strictness: {profile}
+
 Your job: Find logic errors, race conditions, null/undefined dereferences, off-by-one errors,
 type mismatches, and incorrect algorithm implementations.
+Enforce any logic and design rules specified in the Repository Rulebook below.
 
 Use your tools to:
 - read_file: Get full function context
@@ -50,12 +58,14 @@ PR: {pr_title}
 Diff:
 {diff}
 
-Conventions:
-{conventions}
+Repository Rulebook & Conventions:
+{rulebook}
 """
 
 STYLE_PROMPT = """You are a code style reviewer. Find naming issues, dead code, excessive complexity,
-missing error handling, and readability problems.
+missing error handling, and readability problems. Enforce the Repository Rulebook below.
+
+Project Strictness: {profile}
 
 For each finding provide: file, line, severity, confidence (1-100), title, description, suggestion, category: "style".
 
@@ -63,12 +73,14 @@ PR: {pr_title}
 Diff:
 {diff}
 
-Conventions:
-{conventions}
+Repository Rulebook & Conventions:
+{rulebook}
 """
 
 ERROR_HANDLING_PROMPT = """You are an error handling reviewer. Find missing try/catch, unhandled promises,
-swallowed exceptions, and missing error propagation.
+swallowed exceptions, and missing error propagation. Enforce the Repository Rulebook below.
+
+Project Strictness: {profile}
 
 Use read_file to see full function context. Use find_callers to check if callers handle errors.
 
@@ -77,9 +89,16 @@ For each finding provide: file, line, severity, confidence (1-100), title, descr
 PR: {pr_title}
 Diff:
 {diff}
+
+Repository Rulebook & Conventions:
+{rulebook}
 """
 
 TEST_COVERAGE_PROMPT = """You are a test coverage reviewer. Find changed code paths that lack test coverage.
+
+Project Strictness: {profile}
+- If "lenient": Only flag critical missing tests as info/warning. Do not be overly pedantic.
+- If "strict": Require thorough test coverage for all new or modified logic.
 
 Use read_file to check if test files exist. Use search_codebase to find related tests.
 
@@ -90,16 +109,24 @@ If the repo has no test harness, report this as a single info finding and do not
 PR: {pr_title}
 Diff:
 {diff}
+
+Repository Rulebook & Conventions:
+{rulebook}
 """
 
 COMMENT_ACCURACY_PROMPT = """You are a comment accuracy reviewer. Find stale, misleading, or incorrect comments
-that don't match the code they describe.
+that don't match the code they describe. Enforce the Repository Rulebook below.
+
+Project Strictness: {profile}
 
 For each finding provide: file, line, severity, confidence (1-100), title, description, suggestion, category: "comment_accuracy".
 
 PR: {pr_title}
 Diff:
 {diff}
+
+Repository Rulebook & Conventions:
+{rulebook}
 """
 
 VERIFIER_PROMPT = """You are a verification agent. Your job is to critically verify whether a finding is a real issue.
@@ -125,6 +152,10 @@ Respond with:
 ORCHESTRATOR_PROMPT = """You are the orchestrator. You receive findings from multiple specialized agents.
 Your job: deduplicate, rank by importance, and assign a merge score (1-5).
 
+Project Strictness: {profile}
+Repository Rulebook:
+{rulebook}
+
 Findings:
 {findings_json}
 
@@ -133,19 +164,20 @@ PR context:
 - Changed files: {changed_files}
 - Changed lines: {changed_lines}
 
-Rules:
-1. Remove duplicates (same file + similar line + same issue)
-2. Rank criticals first, then warnings, then info
-3. Assign merge score:
-   - 1: Do not merge (critical security or data loss issues)
-   - 2: Major concerns (should fix before merge)
-   - 3: Minor issues (merge with caution, fix in follow-up)
-   - 4: Looks good (minor suggestions only)
-   - 5: Clean (no issues or info-only)
+Scoring Rules based on Project Strictness:
+- If profile is "lenient":
+    * Focus strictly on blocking fatal bugs or severe security breaches (score <= 2).
+    * Do NOT penalize missing tests, style nitpicks, or comment discrepancies (score 4 or 5).
+- If profile is "strict":
+    * Score <= 2 for any unverified warning, security flaw, or violation of the Repository Rulebook.
+    * Only award a 5 if all code changes adhere strictly to the rulebook and quality standards.
+- If profile is "standard":
+    * Normal scoring: 1 = critical blocker, 2 = major concern, 3 = minor issues, 4 = good, 5 = clean.
 
 Return JSON:
-{{"findings": [...], "merge_score": 1-5, "merge_score_reason": "one sentence"}}
+{{"findings": [...], "merge_score": 1-5, "merge_score_reason": "one sentence explaining score in the context of the {profile} profile"}}
 """
+
 
 SUMMARY_PROMPT = """Write a concise summary of this pull request for a code review comment.
 

@@ -19,6 +19,16 @@ export interface Review {
   pr_number: number;
   commit_sha: string;
   status: string;
+  pr_state: string | null;
+  pr_title: string | null;
+  pr_url: string | null;
+  author: string | null;
+  head_branch: string | null;
+  base_branch: string | null;
+  github_pr_id: number | null;
+  repo_id: number | null;
+  pr_created_at: string | null;
+  pr_updated_at: string | null;
   findings: Finding[];
   summary: string;
   diagram: string;
@@ -46,6 +56,25 @@ export interface Installation {
   repo_full_name: string;
   model_id: string | null;
   config: Record<string, unknown>;
+}
+
+export interface RepoSettings {
+  profile: "lenient" | "standard" | "strict" | "custom" | string;
+  rulebook: string;
+  enabled_agents: string[];
+  min_severity: "info" | "warning" | "critical" | string;
+  min_confidence: number;
+  max_findings: number;
+  ignore_paths: string[];
+  critical_paths: string[];
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface RepoSettingsResponse {
+  installation_id: number;
+  repo_full_name: string;
+  settings: RepoSettings;
 }
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
@@ -87,11 +116,23 @@ export const api = {
   getReviewByKey: (repo: string, pr: number, sha: string) =>
     apiFetch<Review>(`/api/reviews/by-key/${encodeURIComponent(repo)}/${pr}/${sha}`),
 
+  retryReview: (id: number) =>
+    apiFetch<{ status: string; message: string; review: Review }>(
+      `/api/reviews/${id}/retry`,
+      { method: "POST" }
+    ),
+
   listInstallations: () =>
     apiFetch<{ installations: Installation[] }>("/api/installations"),
 
   listRepos: (installationId: number) =>
     apiFetch<{ repos: Installation[] }>(`/api/installations/${installationId}/repos`),
+
+  syncInstallation: (installationId: number) =>
+    apiFetch<{ status: string; installation_id: number }>(
+      `/api/installations/${installationId}/sync`,
+      { method: "POST" }
+    ),
 
   getSettings: (installationId: number) =>
     apiFetch<{ installation_id: number; settings: Record<string, unknown> | null }>(
@@ -117,4 +158,22 @@ export const api = {
       `/api/analytics/${installationId}/dispositions${qs ? `?${qs}` : ""}`
     );
   },
+
+  getRepoSettings: (installationId: number, repoFullName: string) =>
+    apiFetch<RepoSettingsResponse>(
+      `/api/installations/${installationId}/repos/${encodeURIComponent(repoFullName)}/settings`
+    ),
+
+  updateRepoSettings: (
+    installationId: number,
+    repoFullName: string,
+    body: Partial<RepoSettings>
+  ) =>
+    apiFetch<{ status: string; repo_full_name: string }>(
+      `/api/installations/${installationId}/repos/${encodeURIComponent(repoFullName)}/settings`,
+      {
+        method: "PUT",
+        body: JSON.stringify(body),
+      }
+    ),
 };

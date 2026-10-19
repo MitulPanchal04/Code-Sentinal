@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
-import { api, Installation } from "@/lib/api";
+import { api, type Installation, type RepoSettings } from "@/lib/api";
 import {
   BookMarked,
   Search,
@@ -10,16 +10,18 @@ import {
   RefreshCw,
   AlertCircle,
   GitPullRequest,
-  Star,
-  CheckCircle2,
-  Clock,
-  ChevronDown,
+  SlidersHorizontal,
+  Shield,
+  ShieldCheck,
+  Zap,
+  BookOpen,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
+import { RepoSettingsModal } from "@/components/RepoSettingsModal";
 
 export default function RepositoriesPage() {
   const [installations, setInstallations] = useState<Installation[]>([]);
@@ -145,83 +147,194 @@ export default function RepositoriesPage() {
         </div>
       ) : (
         <div className="divide-y divide-[#30363d]">
-          {filtered.map((repo) => {
-            const githubUrl = `https://github.com/${repo.repo_full_name}`;
-            return (
-              <div
-                key={`${repo.installation_id}-${repo.repo_full_name}`}
-                className="py-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-              >
-                <div className="flex flex-col gap-1.5 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <a
-                      href={githubUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-bold text-base text-[#58a6ff] hover:underline"
-                    >
-                      {repo.repo_full_name}
-                    </a>
-                    <span className="rounded-full border border-[#30363d] bg-[#21262d] px-2 py-0 text-[10px] font-mono text-muted-foreground">
-                      Public
-                    </span>
-                  </div>
-
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    Automated CodeSentinel GitHub webhook integration with LangGraph ReAct agent pipeline.
-                  </p>
-
-                  <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground pt-1">
-                    {/* Language indicator */}
-                    <span className="flex items-center gap-1.5">
-                      <span className="size-3 rounded-full bg-[#3572A5]" />
-                      <span>Python / TS</span>
-                    </span>
-
-                    {/* Model Tag */}
-                    <span className="rounded bg-[#21262d] px-1.5 py-0.5 text-[11px] font-mono text-[#e6edf3] border border-[#30363d]">
-                      {repo.model_id || "default model"}
-                    </span>
-
-                    {/* Active Status */}
-                    <span className="flex items-center gap-1.5 text-emerald-400 font-medium text-[11px]">
-                      <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                      Active
-                    </span>
-
-                    <span>Installation #{repo.installation_id}</span>
-                  </div>
-                </div>
-
-                {/* Right Action buttons */}
-                <div className="flex items-center gap-2 shrink-0">
-                  <Button
-                    asChild
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-xs border-[#30363d] bg-[#21262d] text-[#e6edf3] hover:bg-[#30363d]"
-                  >
-                    <Link href={`/dashboard/reviews?repo=${encodeURIComponent(repo.repo_full_name)}`}>
-                      <GitPullRequest data-icon="inline-start" />
-                      Pull Requests
-                    </Link>
-                  </Button>
-
-                  <Button
-                    asChild
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 text-xs text-muted-foreground hover:text-white"
-                  >
-                    <a href={githubUrl} target="_blank" rel="noopener noreferrer">
-                      <ExternalLink className="size-3.5" />
-                    </a>
-                  </Button>
-                </div>
-              </div>
-            );
-          })}
+          {filtered.map((repo) => (
+            <RepoRow key={`${repo.installation_id}-${repo.repo_full_name}`} repo={repo} />
+          ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+function RepoRow({ repo }: { repo: Installation }) {
+  const githubUrl = `https://github.com/${repo.repo_full_name}`;
+  const [settings, setSettings] = useState<RepoSettings | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    api
+      .getRepoSettings(repo.installation_id, repo.repo_full_name)
+      .then((res) => {
+        if (mounted) setSettings(res.settings);
+      })
+      .catch(() => {});
+
+    return () => {
+      mounted = false;
+    };
+  }, [repo.installation_id, repo.repo_full_name]);
+
+  const handleSync = async () => {
+    setSyncing(true);
+    setSyncMsg(null);
+    try {
+      const res = await api.syncInstallation(repo.installation_id);
+      setSyncMsg(
+        res.status === "sync_already_queued"
+          ? "Sync in progress"
+          : "PR sync queued"
+      );
+    } catch (err: unknown) {
+      setSyncMsg(err instanceof Error ? err.message : "Sync failed");
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const renderProfileBadge = () => {
+    const prof = settings?.profile || "standard";
+    if (prof === "lenient") {
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/60 px-2.5 py-0.5 text-[11px] font-medium text-foreground">
+          <Zap size={11} className="text-amber-500" /> Rapid Dev
+        </span>
+      );
+    }
+    if (prof === "strict") {
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-0.5 text-[11px] font-medium text-primary">
+          <ShieldCheck size={11} /> High Assurance
+        </span>
+      );
+    }
+    if (prof === "custom") {
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/60 px-2.5 py-0.5 text-[11px] font-medium text-foreground">
+          <SlidersHorizontal size={11} /> Custom Policy
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/60 px-2.5 py-0.5 text-[11px] font-medium text-foreground">
+        <Shield size={11} className="text-muted-foreground" /> Standard
+      </span>
+    );
+  };
+
+  return (
+    <div className="py-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col gap-1.5 min-w-0">
+        <div className="flex items-center gap-2">
+          <a
+            href={githubUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-bold text-base text-[#58a6ff] hover:underline"
+          >
+            {repo.repo_full_name}
+          </a>
+          <span className="rounded-full border border-[#30363d] bg-[#21262d] px-2 py-0 text-[10px] font-mono text-muted-foreground">
+            Public
+          </span>
+          <div className="ml-2">{renderProfileBadge()}</div>
+        </div>
+
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          Automated CodeSentinel GitHub webhook integration with LangGraph ReAct agent pipeline.
+        </p>
+
+        <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground pt-1">
+          {/* Active Modules */}
+          <span className="text-xs text-muted-foreground">
+            {settings ? `${settings.enabled_agents?.length ?? 6} of 6 modules` : "6 of 6 modules"}
+          </span>
+
+          {/* Rulebook count */}
+          {settings?.rulebook?.trim() ? (
+            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-primary">
+              <BookOpen size={11} />
+              Rulebook ({settings.rulebook.trim().split("\n").length} lines)
+            </span>
+          ) : (
+            <span className="text-[11px] text-muted-foreground">Default invariants</span>
+          )}
+
+          {/* Model Tag */}
+          <span className="rounded bg-[#21262d] px-1.5 py-0.5 text-[11px] font-mono text-[#e6edf3] border border-[#30363d]">
+            {repo.model_id || "default model"}
+          </span>
+
+          {/* Active Status */}
+          <span className="flex items-center gap-1.5 text-emerald-400 font-medium text-[11px]">
+            <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            Active
+          </span>
+
+          <span>Installation #{repo.installation_id}</span>
+          {syncMsg && <span className="text-[11px] text-primary">{syncMsg}</span>}
+        </div>
+      </div>
+
+      {/* Right Action buttons */}
+      <div className="flex items-center gap-2 shrink-0">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setModalOpen(true)}
+          className="h-7 text-xs border-[#30363d] bg-[#21262d] text-[#e6edf3] hover:bg-[#30363d]"
+          title="Configure strictness profile, enabled agents, and custom rulebook"
+        >
+          <SlidersHorizontal data-icon="inline-start" className="size-3.5 text-primary" />
+          Policy & Rules
+        </Button>
+
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleSync}
+          disabled={syncing}
+          className="h-7 text-xs border-[#30363d] bg-[#21262d] text-[#e6edf3] hover:bg-[#30363d]"
+          title="Sync existing open PRs for this installation"
+        >
+          <RefreshCw data-icon="inline-start" className={`size-3.5 ${syncing ? "animate-spin" : ""}`} />
+          {syncing ? "Syncing..." : "Sync"}
+        </Button>
+
+        <Button
+          asChild
+          variant="outline"
+          size="sm"
+          className="h-7 text-xs border-[#30363d] bg-[#21262d] text-[#e6edf3] hover:bg-[#30363d]"
+        >
+          <Link href={`/dashboard/reviews?repo=${encodeURIComponent(repo.repo_full_name)}`}>
+            <GitPullRequest data-icon="inline-start" className="size-3.5" />
+            Pull Requests
+          </Link>
+        </Button>
+
+        <Button
+          asChild
+          variant="ghost"
+          size="sm"
+          className="h-7 text-xs text-muted-foreground hover:text-white"
+        >
+          <a href={githubUrl} target="_blank" rel="noopener noreferrer">
+            <ExternalLink className="size-3.5" />
+          </a>
+        </Button>
+      </div>
+
+      {modalOpen && (
+        <RepoSettingsModal
+          installationId={repo.installation_id}
+          repoFullName={repo.repo_full_name}
+          isOpen={modalOpen}
+          onClose={() => setModalOpen(false)}
+          onSaved={(newSettings) => setSettings(newSettings)}
+        />
       )}
     </div>
   );

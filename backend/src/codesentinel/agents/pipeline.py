@@ -76,6 +76,10 @@ class ReviewState(TypedDict):
     pr_context: dict
     config: dict
     conventions: str
+    repo_settings: dict
+    profile: str
+    rulebook: str
+    enabled_agents: list[str]
     review_mode: str
     raw_findings: Annotated[list[Finding], operator.add]
     verified_findings: list[Finding]
@@ -91,6 +95,7 @@ class ReviewState(TypedDict):
     cost_usd: float
     enabled_agent_count: Annotated[int, operator.add]
     errors: Annotated[list[str], operator.add]
+
 
 
 # ─── LLM Factory ─────────────────────────────────────────────────────────────
@@ -235,6 +240,41 @@ def _default_config() -> dict:
 # ─── Pipeline Nodes ──────────────────────────────────────────────────────────
 
 
+# ─── Pipeline Nodes ──────────────────────────────────────────────────────────
+
+PROFILE_PRESETS: dict[str, dict[str, Any]] = {
+    "lenient": {
+        "min_confidence": 85,
+        "min_severity": "warning",
+        "enabled_agents": ["security", "bugs"],
+    },
+    "standard": {
+        "min_confidence": 75,
+        "min_severity": "info",
+        "enabled_agents": [
+            "security",
+            "bugs",
+            "error_handling",
+            "style",
+            "test_coverage",
+            "comment_accuracy",
+        ],
+    },
+    "strict": {
+        "min_confidence": 60,
+        "min_severity": "info",
+        "enabled_agents": [
+            "security",
+            "bugs",
+            "error_handling",
+            "style",
+            "test_coverage",
+            "comment_accuracy",
+        ],
+    },
+}
+
+
 async def load_context_node(state: ReviewState) -> dict:
     """Fetch PR diff, files, conventions, and previous findings."""
     gc = state["github_client"]
@@ -247,8 +287,30 @@ async def load_context_node(state: ReviewState) -> dict:
     pr_context = await gc.get_pr(owner, repo, pr_number)
     conventions = await gc.get_conventions(owner, repo, commit_sha) or ""
 
+    repo_settings = state.get("repo_settings") or {}
+    profile = repo_settings.get("profile") or state.get("profile") or "standard"
+    rulebook = (
+        repo_settings.get("rulebook")
+        or state.get("rulebook")
+        or conventions
+        or "No specific rulebook defined."
+    )
+
+    preset = PROFILE_PRESETS.get(profile, PROFILE_PRESETS["standard"])
+    merged_config = {**_default_config(), **preset}
+
+    # Respect explicit repo_settings overrides
+    if repo_settings.get("enabled_agents") is not None:
+        merged_config["enabled_agents"] = repo_settings["enabled_agents"]
+    if repo_settings.get("min_severity"):
+        merged_config["min_severity"] = repo_settings["min_severity"]
+    if repo_settings.get("min_confidence"):
+        merged_config["min_confidence"] = repo_settings["min_confidence"]
+    if repo_settings.get("max_findings"):
+        merged_config["max_findings"] = repo_settings["max_findings"]
+
     repo_config = await gc.get_repo_config(owner, repo, commit_sha) or {}
-    config = {**_default_config(), **repo_config}
+    config = {**merged_config, **repo_config}
 
     try:
         from codesentinel.rag.indexer import index_codebase
@@ -262,6 +324,10 @@ async def load_context_node(state: ReviewState) -> dict:
         "pr_context": pr_context,
         "conventions": conventions,
         "config": config,
+        "repo_settings": repo_settings,
+        "profile": profile,
+        "rulebook": rulebook,
+        "enabled_agents": config.get("enabled_agents", []),
         "raw_findings": [],
         "tokens_used": {"input": 0, "output": 0},
         "cost_usd": 0.0,
@@ -297,13 +363,23 @@ async def _run_agent(
     tools: list[BaseTool],
 ) -> tuple[list[Finding], dict]:
     """Run a single ReAct agent with tools. Returns (findings, tokens)."""
+    if agent_name not in state.get("enabled_agents", []):
+        logger.info(
+            "agent_skipped_by_rulebook",
+            agent=agent_name,
+            repo=state.get("repo"),
+        )
+        return [], {"input": 0, "output": 0}
+
     llm = create_llm(temperature=0, with_tools=True)
 
     prompt = prompt_template.format(
         pr_title=state.get("pr_title") or "",
         pr_body=(state.get("pr_body") or "")[:2000],
         diff=(state.get("diff") or "")[: _settings.max_context_kb * 1024],
-        conventions=(state.get("conventions") or "")[:4000] or "No conventions file found.",
+        rulebook=(state.get("rulebook") or state.get("conventions") or "")[:4000]
+        or "No conventions file found.",
+        profile=state.get("profile", "standard"),
     )
 
     agent = create_react_agent(llm, tools)
@@ -327,6 +403,8 @@ async def _run_agent(
 
 
 async def security_agent_node(state: ReviewState) -> dict:
+    if "security" not in state.get("enabled_agents", []):
+        return {"raw_findings": [], "enabled_agent_count": 0, "tokens_used": {"input": 0, "output": 0}}
     gc = state["github_client"]
     tools = make_tools(gc, state["owner"], state["repo"], state["commit_sha"])
     findings, tokens = await _run_agent("security", SECURITY_PROMPT, state, tools)
@@ -334,6 +412,8 @@ async def security_agent_node(state: ReviewState) -> dict:
 
 
 async def bug_agent_node(state: ReviewState) -> dict:
+    if "bugs" not in state.get("enabled_agents", []):
+        return {"raw_findings": [], "enabled_agent_count": 0, "tokens_used": {"input": 0, "output": 0}}
     gc = state["github_client"]
     tools = make_tools(gc, state["owner"], state["repo"], state["commit_sha"])
     findings, tokens = await _run_agent("bugs", BUG_PROMPT, state, tools)
@@ -341,6 +421,8 @@ async def bug_agent_node(state: ReviewState) -> dict:
 
 
 async def style_agent_node(state: ReviewState) -> dict:
+    if "style" not in state.get("enabled_agents", []):
+        return {"raw_findings": [], "enabled_agent_count": 0, "tokens_used": {"input": 0, "output": 0}}
     gc = state["github_client"]
     tools = make_tools(gc, state["owner"], state["repo"], state["commit_sha"])
     findings, tokens = await _run_agent("style", STYLE_PROMPT, state, tools)
@@ -348,6 +430,8 @@ async def style_agent_node(state: ReviewState) -> dict:
 
 
 async def error_handling_agent_node(state: ReviewState) -> dict:
+    if "error_handling" not in state.get("enabled_agents", []):
+        return {"raw_findings": [], "enabled_agent_count": 0, "tokens_used": {"input": 0, "output": 0}}
     gc = state["github_client"]
     tools = make_tools(gc, state["owner"], state["repo"], state["commit_sha"])
     findings, tokens = await _run_agent("error_handling", ERROR_HANDLING_PROMPT, state, tools)
@@ -355,6 +439,8 @@ async def error_handling_agent_node(state: ReviewState) -> dict:
 
 
 async def test_coverage_agent_node(state: ReviewState) -> dict:
+    if "test_coverage" not in state.get("enabled_agents", []):
+        return {"raw_findings": [], "enabled_agent_count": 0, "tokens_used": {"input": 0, "output": 0}}
     gc = state["github_client"]
     tools = make_tools(gc, state["owner"], state["repo"], state["commit_sha"])
     findings, tokens = await _run_agent("test_coverage", TEST_COVERAGE_PROMPT, state, tools)
@@ -362,10 +448,13 @@ async def test_coverage_agent_node(state: ReviewState) -> dict:
 
 
 async def comment_accuracy_agent_node(state: ReviewState) -> dict:
+    if "comment_accuracy" not in state.get("enabled_agents", []):
+        return {"raw_findings": [], "enabled_agent_count": 0, "tokens_used": {"input": 0, "output": 0}}
     gc = state["github_client"]
     tools = make_tools(gc, state["owner"], state["repo"], state["commit_sha"])
     findings, tokens = await _run_agent("comment_accuracy", COMMENT_ACCURACY_PROMPT, state, tools)
     return {"raw_findings": findings, "enabled_agent_count": 1, "tokens_used": tokens}
+
 
 
 async def verification_node(state: ReviewState) -> dict:
@@ -423,6 +512,13 @@ async def orchestration_node(state: ReviewState) -> dict:
     floor = state["config"].get("min_confidence", _settings.confidence_floor)
     findings = [f for f in findings if f.get("confidence", 100) >= floor]
 
+    # Filter findings based on min_severity setting
+    min_sev = state["config"].get("min_severity", "info")
+    if min_sev == "critical":
+        findings = [f for f in findings if f.get("severity") == "critical"]
+    elif min_sev == "warning":
+        findings = [f for f in findings if f.get("severity") in ("critical", "warning")]
+
     seen = set()
     deduped = []
     for f in findings:
@@ -457,6 +553,8 @@ async def orchestration_node(state: ReviewState) -> dict:
         pr_title=state.get("pr_title", ""),
         changed_files=len(changed_files),
         changed_lines=changed_lines,
+        profile=state.get("profile", "standard"),
+        rulebook=(state.get("rulebook") or "")[:2000] or "None",
     )
 
     orch_tokens = {"input": 0, "output": 0}
@@ -480,6 +578,16 @@ async def orchestration_node(state: ReviewState) -> dict:
     if all_unverified and merge_score < 3:
         merge_score = 3
         merge_score_reason += " (clamped: all criticals unverified)"
+
+    # Profile-aware scoring adjustments:
+    profile = state.get("profile", "standard")
+    if profile == "lenient" and merge_score < 3:
+        verified_criticals = [
+            f for f in criticals if f.get("verification") == "verified"
+        ]
+        if not verified_criticals:
+            merge_score = 4
+            merge_score_reason += " (lenient profile: no verified critical blockers)"
 
     return {
         "final_findings": deduped,
@@ -596,6 +704,7 @@ async def run_review(
     pr_body: str = "",
     review_mode: str = "review",
     on_node_complete: Any | None = None,
+    repo_settings: dict | None = None,
 ) -> dict[str, Any]:
     """Run the full review pipeline and return results.
 
@@ -603,6 +712,18 @@ async def run_review(
     called after each graph node finishes — used for live progress updates.
     """
     graph = build_review_graph()
+
+    initial_settings = repo_settings or {}
+    initial_profile = initial_settings.get("profile", "standard")
+    initial_rulebook = initial_settings.get("rulebook", "")
+    initial_agents = initial_settings.get("enabled_agents", [
+        "security",
+        "bugs",
+        "error_handling",
+        "style",
+        "test_coverage",
+        "comment_accuracy",
+    ])
 
     initial_state: ReviewState = {
         "github_client": github_client,
@@ -616,6 +737,10 @@ async def run_review(
         "pr_context": {},
         "config": {},
         "conventions": "",
+        "repo_settings": initial_settings,
+        "profile": initial_profile,
+        "rulebook": initial_rulebook,
+        "enabled_agents": initial_agents,
         "review_mode": review_mode,
         "raw_findings": [],
         "verified_findings": [],
@@ -632,6 +757,7 @@ async def run_review(
         "enabled_agent_count": 0,
         "errors": [],
     }
+
 
     # Fields reduced with operator.add — must be accumulated, not overwritten.
     _additive_lists = {"raw_findings", "errors"}
