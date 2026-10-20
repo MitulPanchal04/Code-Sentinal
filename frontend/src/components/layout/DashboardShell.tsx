@@ -164,8 +164,8 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         </header>
 
         {/* Main Canvas */}
-        <main className="w-full pt-14 px-6 bg-[#0d1117] min-h-screen">
-          <div className="flex flex-col w-full text-on-surface pb-12">
+        <main className="w-full pt-16 px-8 md:px-10 lg:px-12 bg-[#0d1117] min-h-screen">
+          <div className="flex flex-col w-full max-w-[1550px] mx-auto pb-16">
             {children}
           </div>
         </main>

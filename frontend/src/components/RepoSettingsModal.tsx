@@ -314,12 +314,12 @@ export function RepoSettingsModal({
       {/* EXPANSIVE DEVELOPER MODAL CONTAINER */}
       <div className="w-full max-w-6xl max-h-[942px] rounded-xl border border-[#30363d] bg-[#0d1117] shadow-2xl flex flex-col overflow-hidden text-[#c9d1d9] antialiased animate-in fade-in zoom-in-95 duration-150">
         {/* 1. MODAL HEADER */}
-        <div className="sticky top-0 z-20 border-b border-[#30363d] px-6 py-4 flex items-center justify-between bg-[#161b22]/90 backdrop-blur">
+        <div className="sticky top-0 z-20 border-b border-[#30363d] px-7 py-5 flex items-center justify-between bg-[#161b22]/90 backdrop-blur">
           <div className="flex items-center gap-3.5">
-            <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-[#0d1117] border border-[#30363d] text-neutral-200 shadow-sm">
+            <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-[#0d1117] border border-[#30363d] text-neutral-200 shadow-sm">
               <span className="material-symbols-outlined text-[20px]">tune</span>
             </div>
-            <div className="flex flex-col">
+            <div className="flex flex-col gap-0.5">
               <h2 className="text-base font-semibold text-[#f0f6fc] tracking-tight">
                 Repository Governance &amp; Review Policy
               </h2>
@@ -338,10 +338,10 @@ export function RepoSettingsModal({
         </div>
 
         {/* 2. MODAL BODY (SCROLLABLE WORKBENCH) */}
-        <div className="p-6 md:p-8 space-y-9 overflow-y-auto max-h-[calc(92vh-130px)] divide-y divide-[#21262d]">
+        <div className="p-7 md:p-9 space-y-10 overflow-y-auto max-h-[calc(92vh-130px)] divide-y divide-[#21262d]">
           {error && (
-            <div className="p-3 bg-red-950/40 border border-red-500/50 rounded-lg text-xs text-red-200 flex items-center gap-2">
-              <span className="material-symbols-outlined text-[16px] text-red-400">error</span>
+            <div className="p-3.5 bg-red-950/40 border border-red-500/50 rounded-xl text-xs text-red-200 flex items-center gap-2.5">
+              <span className="material-symbols-outlined text-[17px] text-red-400">error</span>
               <span>{error}</span>
             </div>
           )}
@@ -360,17 +360,17 @@ export function RepoSettingsModal({
               </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 pt-1">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5 pt-2">
               {/* Preset 1: Rapid Dev */}
               <div
                 onClick={() => applyPreset("lenient")}
-                className={`group relative rounded-lg border p-4 transition-all flex flex-col justify-between cursor-pointer ${
+                className={`group relative rounded-xl border p-5 transition-all flex flex-col justify-between cursor-pointer ${
                   selectedPreset === "lenient"
                     ? "border-neutral-300 bg-[#1b222c] shadow-sm ring-1 ring-neutral-400/30"
                     : "border-[#30363d] bg-[#161b22] hover:border-neutral-500"
                 }`}
               >
-                <div className="space-y-2.5">
+                <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-semibold text-[#f0f6fc]">Rapid Dev &amp; Testing</span>
                     <span className="px-2 py-0.5 rounded text-[11px] font-mono border border-neutral-700 bg-neutral-800 text-neutral-400">
@@ -381,7 +381,7 @@ export function RepoSettingsModal({
                     Bypasses stylistic, documentation, and non-blocking checks to minimize review friction. Focuses solely on critical runtime bugs and high-severity security vulnerabilities.
                   </p>
                 </div>
-                <div className="pt-4 mt-3 border-t border-[#21262d] flex items-center justify-between text-[11px] font-mono text-[#8b949e]">
+                <div className="pt-4 mt-4 border-t border-[#21262d] flex items-center justify-between text-[11px] font-mono text-[#8b949e]">
                   <span>2 Active Modules</span>
                   <span>Min: Warning</span>
                 </div>
@@ -390,19 +390,19 @@ export function RepoSettingsModal({
               {/* Preset 2: Production Standard (Recommended) */}
               <div
                 onClick={() => applyPreset("standard")}
-                className={`relative rounded-lg border p-4 transition-all flex flex-col justify-between cursor-pointer ${
+                className={`relative rounded-xl border p-5 transition-all flex flex-col justify-between cursor-pointer ${
                   selectedPreset === "standard"
                     ? "border-neutral-300 bg-[#1b222c] shadow-sm ring-1 ring-neutral-400/30"
                     : "border-[#30363d] bg-[#161b22] hover:border-neutral-500"
                 }`}
               >
-                <div className="absolute -top-2.5 right-3 flex items-center gap-1 bg-neutral-200 text-neutral-900 px-2 py-0.5 rounded text-[10px] font-mono font-semibold tracking-wide shadow">
+                <div className="absolute -top-3 right-4 flex items-center gap-1.5 bg-neutral-200 text-neutral-900 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-semibold tracking-wide shadow">
                   <span className="material-symbols-outlined text-[13px]" style={{ fontVariationSettings: "'FILL' 1" }}>
                     check_circle
                   </span>
                   RECOMMENDED
                 </div>
-                <div className="space-y-2.5">
+                <div className="space-y-3">
                   <div className="flex items-center justify-between pt-0.5">
                     <span className="text-sm font-semibold text-white">Production Standard</span>
                   </div>
@@ -410,7 +410,7 @@ export function RepoSettingsModal({
                     Comprehensive balanced inspection across all 6 dimensions. Applies industry-standard confidence thresholds to catch errors while maintaining high precision.
                   </p>
                 </div>
-                <div className="pt-4 mt-3 border-t border-neutral-700/60 flex items-center justify-between text-[11px] font-mono text-neutral-200">
+                <div className="pt-4 mt-4 border-t border-neutral-700/60 flex items-center justify-between text-[11px] font-mono text-neutral-200">
                   <span className="flex items-center gap-1.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>All 6 Modules
                   </span>
@@ -421,13 +421,13 @@ export function RepoSettingsModal({
               {/* Preset 3: High-Assurance FinTech */}
               <div
                 onClick={() => applyPreset("strict")}
-                className={`group relative rounded-lg border p-4 transition-all flex flex-col justify-between cursor-pointer ${
+                className={`group relative rounded-xl border p-5 transition-all flex flex-col justify-between cursor-pointer ${
                   selectedPreset === "strict"
                     ? "border-neutral-300 bg-[#1b222c] shadow-sm ring-1 ring-neutral-400/30"
                     : "border-[#30363d] bg-[#161b22] hover:border-neutral-500"
                 }`}
               >
-                <div className="space-y-2.5">
+                <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-semibold text-[#f0f6fc]">High-Assurance FinTech</span>
                     <span className="px-2 py-0.5 rounded text-[11px] font-mono border border-neutral-700 bg-neutral-800 text-neutral-400">
@@ -438,7 +438,7 @@ export function RepoSettingsModal({
                     Rigorous inspection policy for client deliverables and financial services. Flags edge-case logic and enforces test coverage.
                   </p>
                 </div>
-                <div className="pt-4 mt-3 border-t border-[#21262d] flex items-center justify-between text-[11px] font-mono text-[#8b949e]">
+                <div className="pt-4 mt-4 border-t border-[#21262d] flex items-center justify-between text-[11px] font-mono text-[#8b949e]">
                   <span>All 6 Modules</span>
                   <span>High Rigor (60% Cutoff)</span>
                 </div>
@@ -447,7 +447,7 @@ export function RepoSettingsModal({
           </section>
 
           {/* SECTION B: SPECIALIZED INSPECTION MODULES */}
-          <section className="space-y-4 pt-8">
+          <section className="space-y-4 pt-9">
             <div>
               <div className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-neutral-400 text-[18px]">grid_view</span>
@@ -460,24 +460,24 @@ export function RepoSettingsModal({
               </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-2">
               {AGENT_MODULES.map((module) => {
                 const isChecked = enabledAgents.includes(module.id);
                 return (
                   <div
                     key={module.id}
                     onClick={() => toggleAgent(module.id)}
-                    className="p-3.5 rounded-lg border border-[#30363d] bg-[#161b22] hover:border-neutral-500 transition-colors flex items-start justify-between gap-3 group cursor-pointer"
+                    className="p-4 rounded-xl border border-[#30363d] bg-[#161b22] hover:border-neutral-500 transition-colors flex items-start justify-between gap-3.5 group cursor-pointer shadow-sm"
                   >
                     <div className="flex items-start gap-3">
-                      <div className="p-2 rounded bg-[#0d1117] border border-[#30363d] text-neutral-300 mt-0.5">
-                        <span className="material-symbols-outlined text-[18px]">{module.icon}</span>
+                      <div className="p-2.5 rounded-lg bg-[#0d1117] border border-[#30363d] text-neutral-300 mt-0.5">
+                        <span className="material-symbols-outlined text-[19px]">{module.icon}</span>
                       </div>
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
                           <span className="text-xs font-semibold text-[#f0f6fc]">{module.name}</span>
                         </div>
-                        <span className="text-[10px] font-mono text-neutral-400 block">{module.category}</span>
+                        <span className="text-[10.5px] font-mono text-neutral-400 block">{module.category}</span>
                         <p className="text-xs text-[#8b949e] leading-snug pt-0.5">{module.desc}</p>
                       </div>
                     </div>
@@ -507,7 +507,7 @@ export function RepoSettingsModal({
           </section>
 
           {/* SECTION C: QUALITY GATES & STRICTNESS THRESHOLDS */}
-          <section className="space-y-4 pt-8">
+          <section className="space-y-4 pt-9">
             <div className="flex items-center justify-between">
               <div>
                 <div className="flex items-center gap-2">
@@ -529,9 +529,9 @@ export function RepoSettingsModal({
               </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 pt-1">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5 pt-2">
               {/* Card 1: Minimum Severity */}
-              <div className="p-4 rounded-lg border border-[#30363d] bg-[#161b22] space-y-3">
+              <div className="p-5 rounded-xl border border-[#30363d] bg-[#161b22] space-y-3.5 shadow-sm">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-medium text-neutral-300">Minimum Severity</span>
                   <span className="text-[10px] font-mono text-[#8b949e]">Threshold Gate</span>
@@ -543,28 +543,28 @@ export function RepoSettingsModal({
                       setSelectedPreset("custom");
                       setMinSeverity(e.target.value as "info" | "warning" | "error");
                     }}
-                    className="w-full h-8 bg-[#0d1117] border border-[#30363d] focus:border-neutral-400 rounded-md px-2.5 text-xs text-[#f0f6fc] font-medium appearance-none cursor-pointer focus:outline-none"
+                    className="w-full h-9 bg-[#0d1117] border border-[#30363d] focus:border-neutral-400 rounded-md px-3 text-xs text-[#f0f6fc] font-medium appearance-none cursor-pointer focus:outline-none"
                   >
                     <option value="warning">Warning (Filter Out Trivial Notes)</option>
                     <option value="error">Error (Critical Blockers Only)</option>
                     <option value="info">Info (Comprehensive Logging)</option>
                   </select>
-                  <span className="material-symbols-outlined text-[16px] text-neutral-400 absolute right-2.5 top-2 pointer-events-none">
+                  <span className="material-symbols-outlined text-[16px] text-neutral-400 absolute right-3 top-2.5 pointer-events-none">
                     unfold_more
                   </span>
                 </div>
-                <p className="text-[11px] text-[#8b949e] leading-normal">
+                <p className="text-[11.5px] text-[#8b949e] leading-relaxed">
                   Findings below this severity tier are discarded prior to review publication.
                 </p>
               </div>
 
               {/* Card 2: Confidence Floor */}
-              <div className="p-4 rounded-lg border border-[#30363d] bg-[#161b22] space-y-3">
+              <div className="p-5 rounded-xl border border-[#30363d] bg-[#161b22] space-y-3.5 shadow-sm">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-medium text-neutral-300">Confidence Floor</span>
                   <span className="text-xs font-mono font-semibold text-white">{minConfidence}% certainty</span>
                 </div>
-                <div className="pt-1.5 pb-1">
+                <div className="pt-2 pb-1">
                   <input
                     type="range"
                     min="50"
@@ -574,33 +574,33 @@ export function RepoSettingsModal({
                       setSelectedPreset("custom");
                       setMinConfidence(Number(e.target.value));
                     }}
-                    className="w-full h-1 bg-[#21262d] rounded-lg appearance-none cursor-pointer accent-neutral-200"
+                    className="w-full h-1.5 bg-[#21262d] rounded-lg appearance-none cursor-pointer accent-neutral-200"
                   />
-                  <div className="flex justify-between text-[10px] font-mono text-neutral-500 mt-1">
+                  <div className="flex justify-between text-[10px] font-mono text-neutral-500 mt-1.5">
                     <span>50%</span>
                     <span className="text-neutral-300">{minConfidence}%</span>
                     <span>95%</span>
                   </div>
                 </div>
-                <p className="text-[11px] text-[#8b949e] leading-normal">
+                <p className="text-[11.5px] text-[#8b949e] leading-relaxed">
                   Findings with statistical certainty below {minConfidence}% will be suppressed to eliminate false positives.
                 </p>
               </div>
 
               {/* Card 3: Max Findings Cap */}
-              <div className="p-4 rounded-lg border border-[#30363d] bg-[#161b22] space-y-3">
+              <div className="p-5 rounded-xl border border-[#30363d] bg-[#161b22] space-y-3.5 shadow-sm">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-medium text-neutral-300">Max Findings Cap</span>
                   <span className="text-[10px] font-mono text-[#8b949e]">PR Noise Ceiling</span>
                 </div>
-                <div className="flex items-center justify-between h-8 bg-[#0d1117] border border-[#30363d] rounded-md px-2">
+                <div className="flex items-center justify-between h-9 bg-[#0d1117] border border-[#30363d] rounded-md px-2.5">
                   <button
                     type="button"
                     onClick={() => {
                       setSelectedPreset("custom");
                       setMaxFindings((prev) => Math.max(5, prev - 5));
                     }}
-                    className="w-6 h-6 flex items-center justify-center rounded text-neutral-400 hover:text-white hover:bg-[#21262d] transition"
+                    className="w-6.5 h-6.5 flex items-center justify-center rounded text-neutral-400 hover:text-white hover:bg-[#21262d] transition"
                   >
                     -
                   </button>
@@ -611,12 +611,12 @@ export function RepoSettingsModal({
                       setSelectedPreset("custom");
                       setMaxFindings((prev) => Math.min(100, prev + 5));
                     }}
-                    className="w-6 h-6 flex items-center justify-center rounded text-neutral-400 hover:text-white hover:bg-[#21262d] transition"
+                    className="w-6.5 h-6.5 flex items-center justify-center rounded text-neutral-400 hover:text-white hover:bg-[#21262d] transition"
                   >
                     +
                   </button>
                 </div>
-                <p className="text-[11px] text-[#8b949e] leading-normal">
+                <p className="text-[11.5px] text-[#8b949e] leading-relaxed">
                   Upper bound on posted comments to prevent review fatigue on large pull requests.
                 </p>
               </div>
@@ -624,7 +624,7 @@ export function RepoSettingsModal({
           </section>
 
           {/* SECTION D: REPOSITORY RULEBOOK & ARCHITECTURAL INVARIANTS */}
-          <section className="space-y-4 pt-8">
+          <section className="space-y-4 pt-9">
             <div>
               <div className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-neutral-400 text-[18px]">terminal</span>
@@ -638,15 +638,15 @@ export function RepoSettingsModal({
             </div>
 
             {/* Quick Template Chips & View Switcher */}
-            <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-              <div className="flex flex-wrap items-center gap-1.5">
+            <div className="flex flex-wrap items-center justify-between gap-3.5 pt-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="text-[11px] text-[#8b949e] font-mono mr-1">Insert Rule:</span>
                 {RULE_TEMPLATES.map((tmpl) => (
                   <button
                     key={tmpl.label}
                     type="button"
                     onClick={() => insertTemplate(tmpl.content)}
-                    className="border border-[#30363d] bg-[#161b22] hover:bg-[#21262d] hover:border-neutral-500 text-xs px-2.5 py-0.5 rounded-full text-neutral-300 font-mono transition"
+                    className="border border-[#30363d] bg-[#161b22] hover:bg-[#21262d] hover:border-neutral-500 text-xs px-3 py-1 rounded-full text-neutral-300 font-mono transition shadow-sm"
                   >
                     {tmpl.label}
                   </button>
@@ -656,7 +656,7 @@ export function RepoSettingsModal({
                 <button
                   type="button"
                   onClick={() => setPreviewMode("write")}
-                  className={`px-2.5 py-1 rounded font-medium shadow-xs transition ${
+                  className={`px-3 py-1 rounded font-medium shadow-xs transition ${
                     previewMode === "write"
                       ? "bg-[#21262d] text-white"
                       : "text-neutral-400 hover:text-white"
@@ -667,7 +667,7 @@ export function RepoSettingsModal({
                 <button
                   type="button"
                   onClick={() => setPreviewMode("preview")}
-                  className={`px-2.5 py-1 rounded font-medium shadow-xs transition ${
+                  className={`px-3 py-1 rounded font-medium shadow-xs transition ${
                     previewMode === "preview"
                       ? "bg-[#21262d] text-white"
                       : "text-neutral-400 hover:text-white"
@@ -679,27 +679,27 @@ export function RepoSettingsModal({
             </div>
 
             {/* Markdown Studio Editor Panel */}
-            <div className="rounded-lg border border-[#30363d] bg-[#090d13] overflow-hidden flex flex-col focus-within:border-neutral-400 transition-colors shadow-inner">
+            <div className="rounded-xl border border-[#30363d] bg-[#090d13] overflow-hidden flex flex-col focus-within:border-neutral-400 transition-colors shadow-inner">
               {/* Formatting Toolbar */}
-              <div className="px-3 py-1.5 border-b border-[#30363d] bg-[#161b22] flex items-center gap-1 overflow-x-auto">
+              <div className="px-3.5 py-2 border-b border-[#30363d] bg-[#161b22] flex items-center gap-1.5 overflow-x-auto">
                 <button
                   type="button"
                   onClick={() => handleToolbarAction("h2")}
-                  className="p-1 rounded text-neutral-400 hover:text-white hover:bg-[#21262d] font-mono font-bold text-xs w-6 h-6 flex items-center justify-center"
+                  className="p-1 rounded text-neutral-400 hover:text-white hover:bg-[#21262d] font-mono font-bold text-xs w-6.5 h-6.5 flex items-center justify-center"
                 >
                   H2
                 </button>
                 <button
                   type="button"
                   onClick={() => handleToolbarAction("bold")}
-                  className="p-1 rounded text-neutral-400 hover:text-white hover:bg-[#21262d] font-serif font-bold text-xs w-6 h-6 flex items-center justify-center"
+                  className="p-1 rounded text-neutral-400 hover:text-white hover:bg-[#21262d] font-serif font-bold text-xs w-6.5 h-6.5 flex items-center justify-center"
                 >
                   B
                 </button>
                 <button
                   type="button"
                   onClick={() => handleToolbarAction("italic")}
-                  className="p-1 rounded text-neutral-400 hover:text-white hover:bg-[#21262d] italic font-serif text-xs w-6 h-6 flex items-center justify-center"
+                  className="p-1 rounded text-neutral-400 hover:text-white hover:bg-[#21262d] italic font-serif text-xs w-6.5 h-6.5 flex items-center justify-center"
                 >
                   I
                 </button>
@@ -707,14 +707,14 @@ export function RepoSettingsModal({
                 <button
                   type="button"
                   onClick={() => handleToolbarAction("code")}
-                  className="p-1 rounded text-neutral-400 hover:text-white hover:bg-[#21262d] text-xs font-mono w-6 h-6 flex items-center justify-center"
+                  className="p-1 rounded text-neutral-400 hover:text-white hover:bg-[#21262d] text-xs font-mono w-6.5 h-6.5 flex items-center justify-center"
                 >
                   &lt;&gt;
                 </button>
                 <button
                   type="button"
                   onClick={() => handleToolbarAction("codeblock")}
-                  className="p-1 rounded text-neutral-400 hover:text-white hover:bg-[#21262d] text-xs font-mono w-6 h-6 flex items-center justify-center"
+                  className="p-1 rounded text-neutral-400 hover:text-white hover:bg-[#21262d] text-xs font-mono w-6.5 h-6.5 flex items-center justify-center"
                 >
                   {"{ }"}
                 </button>
@@ -722,37 +722,37 @@ export function RepoSettingsModal({
                 <button
                   type="button"
                   onClick={() => handleToolbarAction("bullet")}
-                  className="p-1 rounded text-neutral-400 hover:text-white hover:bg-[#21262d] w-6 h-6 flex items-center justify-center"
+                  className="p-1 rounded text-neutral-400 hover:text-white hover:bg-[#21262d] w-6.5 h-6.5 flex items-center justify-center"
                 >
-                  <span className="material-symbols-outlined text-[14px]">format_list_bulleted</span>
+                  <span className="material-symbols-outlined text-[15px]">format_list_bulleted</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => handleToolbarAction("number")}
-                  className="p-1 rounded text-neutral-400 hover:text-white hover:bg-[#21262d] w-6 h-6 flex items-center justify-center"
+                  className="p-1 rounded text-neutral-400 hover:text-white hover:bg-[#21262d] w-6.5 h-6.5 flex items-center justify-center"
                 >
-                  <span className="material-symbols-outlined text-[14px]">format_list_numbered</span>
+                  <span className="material-symbols-outlined text-[15px]">format_list_numbered</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => handleToolbarAction("check")}
-                  className="p-1 rounded text-neutral-400 hover:text-white hover:bg-[#21262d] w-6 h-6 flex items-center justify-center"
+                  className="p-1 rounded text-neutral-400 hover:text-white hover:bg-[#21262d] w-6.5 h-6.5 flex items-center justify-center"
                 >
-                  <span className="material-symbols-outlined text-[14px]">check_box</span>
+                  <span className="material-symbols-outlined text-[15px]">check_box</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => handleToolbarAction("quote")}
-                  className="p-1 rounded text-neutral-400 hover:text-white hover:bg-[#21262d] w-6 h-6 flex items-center justify-center"
+                  className="p-1 rounded text-neutral-400 hover:text-white hover:bg-[#21262d] w-6.5 h-6.5 flex items-center justify-center"
                 >
-                  <span className="material-symbols-outlined text-[14px]">format_quote</span>
+                  <span className="material-symbols-outlined text-[15px]">format_quote</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => handleToolbarAction("table")}
-                  className="p-1 rounded text-neutral-400 hover:text-white hover:bg-[#21262d] w-6 h-6 flex items-center justify-center"
+                  className="p-1 rounded text-neutral-400 hover:text-white hover:bg-[#21262d] w-6.5 h-6.5 flex items-center justify-center"
                 >
-                  <span className="material-symbols-outlined text-[14px]">table</span>
+                  <span className="material-symbols-outlined text-[15px]">table</span>
                 </button>
               </div>
 
@@ -762,22 +762,22 @@ export function RepoSettingsModal({
                   ref={textareaRef}
                   value={customPrompt}
                   onChange={(e) => setCustomPrompt(e.target.value)}
-                  className="w-full bg-transparent p-4 font-mono text-xs leading-relaxed text-[#c9d1d9] focus:outline-none resize-none selection:bg-[#264f78]"
+                  className="w-full bg-transparent p-5 font-mono text-xs leading-relaxed text-[#c9d1d9] focus:outline-none resize-none selection:bg-[#264f78]"
                   rows={10}
                   spellCheck="false"
                   placeholder="### Security & Privacy Invariants&#10;- **No PII Logging**: Never log passwords, API tokens, user emails, or credentials.&#10;- **Tenant Scoping**: All database queries MUST explicitly include `tenant_id` filtering."
                 />
               ) : (
                 <div
-                  className="w-full p-4 font-sans text-xs leading-relaxed text-[#c9d1d9] prose prose-invert max-w-none min-h-[190px]"
+                  className="w-full p-5 font-sans text-xs leading-relaxed text-[#c9d1d9] prose prose-invert max-w-none min-h-[190px]"
                   dangerouslySetInnerHTML={{ __html: renderedMarkdown }}
                 />
               )}
 
               {/* Editor Footer Status */}
-              <div className="px-4 py-2 border-t border-[#21262d] bg-[#0d1117] flex items-center justify-between text-[11px] font-mono text-neutral-500">
-                <div className="flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-[14px] text-neutral-400">code_blocks</span>
+              <div className="px-5 py-2.5 border-t border-[#21262d] bg-[#0d1117] flex items-center justify-between text-[11px] font-mono text-neutral-500">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[15px] text-neutral-400">code_blocks</span>
                   <span>Markdown formatting supported</span>
                 </div>
                 <div>{customPrompt.length} characters</div>
@@ -787,12 +787,12 @@ export function RepoSettingsModal({
         </div>
 
         {/* 3. MODAL STICKY FOOTER */}
-        <div className="sticky bottom-0 z-20 border-t border-[#30363d] px-6 py-4 bg-[#161b22] flex items-center justify-between">
-          <div className="flex items-center gap-2 text-xs text-[#8b949e]">
+        <div className="sticky bottom-0 z-20 border-t border-[#30363d] px-7 py-4.5 bg-[#161b22] flex items-center justify-between">
+          <div className="flex items-center gap-2.5 text-xs text-[#8b949e]">
             <span className="h-2 w-2 rounded-full bg-emerald-400"></span>
             <span>Policy operational and ready to enforce on subsequent pull requests.</span>
           </div>
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-3">
             <button
               onClick={onClose}
               disabled={saving}
@@ -804,7 +804,7 @@ export function RepoSettingsModal({
             <button
               onClick={handleSave}
               disabled={saving}
-              className="bg-neutral-100 hover:bg-white text-neutral-900 text-xs font-semibold px-4.5 py-2 rounded-lg flex items-center gap-1.5 shadow-sm transition-all hover:shadow"
+              className="bg-neutral-100 hover:bg-white text-neutral-900 text-xs font-semibold px-5 py-2 rounded-lg flex items-center gap-2 shadow-sm transition-all hover:shadow"
               type="button"
             >
               <span className="material-symbols-outlined text-[16px]">

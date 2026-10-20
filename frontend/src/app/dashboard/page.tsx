@@ -74,18 +74,18 @@ export default function DashboardPage() {
   return (
     <div className="flex flex-col w-full text-slate-100 pb-12">
       {/* 1. Executive Page Header */}
-      <header className="flex flex-col md:flex-row md:items-end justify-between gap-4 py-6 border-b border-[#30363d]/70">
-        <div className="flex flex-col gap-1.5">
+      <header className="flex flex-col md:flex-row md:items-end justify-between gap-6 py-8 border-b border-[#30363d]/70">
+        <div className="flex flex-col gap-2">
           <div className="flex items-center gap-2 text-xs font-mono text-[#8b949e] tracking-tight">
             <span>Overview</span>
             <span className="text-[#484f58]">/</span>
             <span className="text-[#c9d1d9] font-medium">Executive Oversight</span>
-            <span className="px-1.5 py-0.5 rounded text-[10px] bg-[#161b22] border border-[#30363d] text-emerald-400 font-mono ml-1.5 flex items-center gap-1">
+            <span className="px-2 py-0.5 rounded text-[10px] bg-[#161b22] border border-[#30363d] text-emerald-400 font-mono ml-2 flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
               PIPELINE ACTIVE
             </span>
           </div>
-          <h1 className="text-xl md:text-2xl font-semibold tracking-tight text-[#f0f6fc] font-display flex items-center gap-3">
+          <h1 className="text-2xl md:text-3xl font-semibold tracking-tight text-[#f0f6fc] font-display flex items-center gap-3">
             Engineering Oversight &amp; Review Feed
           </h1>
           <p className="text-xs md:text-sm text-[#8b949e] max-w-2xl font-normal leading-relaxed">
@@ -94,10 +94,10 @@ export default function DashboardPage() {
         </div>
 
         {/* Right Controls */}
-        <div className="flex items-center gap-2.5 self-start md:self-auto shrink-0">
+        <div className="flex items-center gap-3 self-start md:self-auto shrink-0">
           <button
             onClick={handleExport}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#161b22] hover:bg-[#21262d] text-[#c9d1d9] hover:text-[#f0f6fc] border border-[#30363d] rounded-md text-xs font-medium transition-colors shadow-xs cursor-pointer"
+            className="inline-flex items-center gap-2 px-3.5 py-2 bg-[#161b22] hover:bg-[#21262d] text-[#c9d1d9] hover:text-[#f0f6fc] border border-[#30363d] rounded-md text-xs font-medium transition-colors shadow-xs cursor-pointer"
             type="button"
           >
             <span className="material-symbols-outlined text-[15px] text-[#8b949e]">download</span>
@@ -105,7 +105,7 @@ export default function DashboardPage() {
           </button>
           <Link
             href="/dashboard/reviews"
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-[#f0f6fc] hover:bg-[#ffffff] text-[#0d1117] rounded-md text-xs font-semibold tracking-tight transition-all shadow-xs active:scale-95"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-[#f0f6fc] hover:bg-[#ffffff] text-[#0d1117] rounded-md text-xs font-semibold tracking-tight transition-all shadow-xs active:scale-95"
           >
             <span className="material-symbols-outlined text-[16px]">add</span>
             Trigger Manual Review
@@ -114,16 +114,16 @@ export default function DashboardPage() {
       </header>
 
       {/* 2. Top KPI Summary Strip */}
-      <section aria-label="Key Governance Telemetry" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 py-6">
+      <section aria-label="Key Governance Telemetry" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 py-8">
         {/* Card 1: Reviews Processed */}
-        <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4 flex flex-col justify-between hover:border-[#8b949e]/50 transition-colors">
+        <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-5 flex flex-col justify-between hover:border-[#8b949e]/50 transition-colors">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-[#8b949e] tracking-tight">Reviews Processed (30d)</span>
-            <div className="w-7 h-7 rounded bg-[#21262d] border border-[#30363d] flex items-center justify-center text-[#c9d1d9]">
-              <span className="material-symbols-outlined text-[15px]">fact_check</span>
+            <div className="w-8 h-8 rounded bg-[#21262d] border border-[#30363d] flex items-center justify-center text-[#c9d1d9]">
+              <span className="material-symbols-outlined text-[16px]">fact_check</span>
             </div>
           </div>
-          <div className="mt-3 flex items-baseline gap-2">
+          <div className="mt-4 flex items-baseline gap-2.5">
             <span className="text-2xl font-bold font-mono tracking-tight text-[#f0f6fc]">
               {total > 0 ? total : 428}
             </span>
@@ -131,21 +131,21 @@ export default function DashboardPage() {
               +12.4%
             </span>
           </div>
-          <div className="mt-2 text-[11px] font-mono text-[#8b949e] flex items-center gap-1.5 border-t border-[#30363d]/40 pt-2">
+          <div className="mt-3 text-[11px] font-mono text-[#8b949e] flex items-center gap-1.5 border-t border-[#30363d]/40 pt-2.5">
             <span className="w-1.5 h-1.5 rounded-full bg-[#8b949e]" />
             <span>14 repos synchronized</span>
           </div>
         </div>
 
         {/* Card 2: Average Merge Readiness */}
-        <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4 flex flex-col justify-between hover:border-[#8b949e]/50 transition-colors">
+        <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-5 flex flex-col justify-between hover:border-[#8b949e]/50 transition-colors">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-[#8b949e] tracking-tight">Average Merge Readiness</span>
-            <div className="w-7 h-7 rounded bg-[#21262d] border border-[#30363d] flex items-center justify-center text-[#c9d1d9]">
-              <span className="material-symbols-outlined text-[15px]">verified_user</span>
+            <div className="w-8 h-8 rounded bg-[#21262d] border border-[#30363d] flex items-center justify-center text-[#c9d1d9]">
+              <span className="material-symbols-outlined text-[16px]">verified_user</span>
             </div>
           </div>
-          <div className="mt-3 flex items-baseline justify-between">
+          <div className="mt-4 flex items-baseline justify-between">
             <div className="flex items-baseline gap-1">
               <span className="text-2xl font-bold font-mono tracking-tight text-[#f0f6fc]">{avgScore}</span>
               <span className="text-xs font-mono text-[#8b949e]">/ 10</span>
@@ -155,21 +155,21 @@ export default function DashboardPage() {
               <polyline points="0,16 12,14 24,15 36,9 48,11 64,3" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.75" />
             </svg>
           </div>
-          <div className="mt-2 text-[11px] font-mono text-[#8b949e] flex items-center gap-1.5 border-t border-[#30363d]/40 pt-2">
+          <div className="mt-3 text-[11px] font-mono text-[#8b949e] flex items-center gap-1.5 border-t border-[#30363d]/40 pt-2.5">
             <span className="text-emerald-400 font-semibold">94.6%</span>
             <span>first-pass pass rate</span>
           </div>
         </div>
 
         {/* Card 3: Critical Flaws Intercepted */}
-        <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4 flex flex-col justify-between hover:border-[#8b949e]/50 transition-colors">
+        <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-5 flex flex-col justify-between hover:border-[#8b949e]/50 transition-colors">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-[#8b949e] tracking-tight">Critical Flaws Intercepted</span>
-            <div className="w-7 h-7 rounded bg-[#21262d] border border-[#30363d] flex items-center justify-center text-rose-400">
-              <span className="material-symbols-outlined text-[15px]">dangerous</span>
+            <div className="w-8 h-8 rounded bg-[#21262d] border border-[#30363d] flex items-center justify-center text-rose-400">
+              <span className="material-symbols-outlined text-[16px]">dangerous</span>
             </div>
           </div>
-          <div className="mt-3 flex items-baseline gap-2">
+          <div className="mt-4 flex items-baseline gap-2.5">
             <span className="text-2xl font-bold font-mono tracking-tight text-rose-400">
               {failedCount > 0 ? failedCount : 39}
             </span>
@@ -177,25 +177,25 @@ export default function DashboardPage() {
               Pre-Merge Block
             </span>
           </div>
-          <div className="mt-2 text-[11px] font-mono text-[#8b949e] flex items-center gap-1.5 border-t border-[#30363d]/40 pt-2">
+          <div className="mt-3 text-[11px] font-mono text-[#8b949e] flex items-center gap-1.5 border-t border-[#30363d]/40 pt-2.5">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
             <span>0 production leak escapes</span>
           </div>
         </div>
 
         {/* Card 4: AI Compute Cost */}
-        <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4 flex flex-col justify-between hover:border-[#8b949e]/50 transition-colors">
+        <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-5 flex flex-col justify-between hover:border-[#8b949e]/50 transition-colors">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-[#8b949e] tracking-tight">AI Compute Cost (30d)</span>
-            <div className="w-7 h-7 rounded bg-[#21262d] border border-[#30363d] flex items-center justify-center text-[#c9d1d9]">
-              <span className="material-symbols-outlined text-[15px]">memory</span>
+            <div className="w-8 h-8 rounded bg-[#21262d] border border-[#30363d] flex items-center justify-center text-[#c9d1d9]">
+              <span className="material-symbols-outlined text-[16px]">memory</span>
             </div>
           </div>
-          <div className="mt-3 flex items-baseline gap-1.5">
+          <div className="mt-4 flex items-baseline gap-1.5">
             <span className="text-2xl font-bold font-mono tracking-tight text-[#f0f6fc]">$18.42</span>
             <span className="text-xs font-mono text-[#8b949e]">USD</span>
           </div>
-          <div className="mt-2 text-[11px] font-mono text-[#8b949e] flex items-center justify-between border-t border-[#30363d]/40 pt-2">
+          <div className="mt-3 text-[11px] font-mono text-[#8b949e] flex items-center justify-between border-t border-[#30363d]/40 pt-2.5">
             <span>Eff: 98.4%</span>
             <span>~$0.043 / review</span>
           </div>
@@ -203,7 +203,7 @@ export default function DashboardPage() {
       </section>
 
       {/* 3. Visual Analytics Split (65% / 35%) */}
-      <section className="grid grid-cols-1 lg:grid-cols-12 gap-4 pb-6">
+      <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 pb-10">
         {/* Left Panel: Weekly PR Volume vs Merge Pass Rate (65% -> 8 cols) */}
         <div className="lg:col-span-8 bg-[#161b22] border border-[#30363d] rounded-lg p-5 flex flex-col justify-between">
           <div>

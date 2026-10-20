@@ -167,8 +167,8 @@ export default function RepositoriesPage() {
   return (
     <div className="flex flex-col w-full pb-12">
       {/* Top Breadcrumb & Executive Header */}
-      <header className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-6 pt-5">
-        <div className="flex flex-col gap-1.5">
+      <header className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-8 pt-6">
+        <div className="flex flex-col gap-2">
           <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[#8b949e] font-mono text-[11px]">
             <a className="hover:text-[#f0f6fc] transition-colors" href="/dashboard">
               Dashboard
@@ -177,10 +177,10 @@ export default function RepositoriesPage() {
             <span className="text-[#f0f6fc] uppercase tracking-wider font-semibold">Repositories</span>
           </nav>
           <div className="flex items-center gap-3">
-            <h1 className="font-display text-[26px] font-semibold text-[#f0f6fc] tracking-tight leading-tight">
+            <h1 className="font-display text-[28px] font-semibold text-[#f0f6fc] tracking-tight leading-tight">
               Connected Repositories
             </h1>
-            <span className="px-2 py-0.5 rounded-md bg-[#161b22] border border-[#30363d] text-[#8b949e] font-mono text-[11px] flex items-center gap-1.5">
+            <span className="px-2.5 py-0.5 rounded-md bg-[#161b22] border border-[#30363d] text-[#8b949e] font-mono text-[11px] flex items-center gap-1.5">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
               2 Orgs Synced
             </span>
@@ -191,14 +191,14 @@ export default function RepositoriesPage() {
         </div>
 
         {/* Global Action Bar */}
-        <div className="flex items-center gap-2.5 shrink-0">
+        <div className="flex items-center gap-3 shrink-0">
           <button
             onClick={() => fetchData(true)}
             disabled={refreshing}
-            className="flex items-center gap-1.5 px-3 h-8 rounded-md bg-[#21262d] hover:bg-[#30363d] text-[#c9d1d9] hover:text-[#f0f6fc] font-medium text-[12px] border border-[#30363d] transition-colors"
+            className="flex items-center gap-2 px-3.5 h-9 rounded-md bg-[#21262d] hover:bg-[#30363d] text-[#c9d1d9] hover:text-[#f0f6fc] font-medium text-[12px] border border-[#30363d] transition-colors"
             type="button"
           >
-            <span className={`material-symbols-outlined text-[15px] text-[#8b949e] ${refreshing ? "animate-spin" : ""}`}>
+            <span className={`material-symbols-outlined text-[16px] text-[#8b949e] ${refreshing ? "animate-spin" : ""}`}>
               sync
             </span>
             <span>{refreshing ? "Refreshing..." : "Refresh Status"}</span>
@@ -207,26 +207,26 @@ export default function RepositoriesPage() {
             href="https://github.com/apps"
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1.5 px-3 h-8 rounded-md bg-[#238636] hover:bg-[#2ea043] text-white font-medium text-[12px] border border-[rgba(240,246,252,0.1)] transition-colors shadow-sm"
+            className="flex items-center gap-2 px-3.5 h-9 rounded-md bg-[#238636] hover:bg-[#2ea043] text-white font-medium text-[12px] border border-[rgba(240,246,252,0.1)] transition-colors shadow-sm"
           >
             <span>Configure GitHub App</span>
-            <span className="material-symbols-outlined text-[15px]">open_in_new</span>
+            <span className="material-symbols-outlined text-[16px]">open_in_new</span>
           </a>
         </div>
       </header>
 
       {/* Top KPI Summary Strip */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3.5 mb-6">
+      <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6 mb-8">
         {/* KPI 1 */}
-        <div className="rounded-lg bg-[#161b22] p-4 border border-[#30363d] flex flex-col justify-between">
-          <div className="flex items-start justify-between mb-2">
+        <div className="rounded-xl bg-[#161b22] p-5 border border-[#30363d] flex flex-col justify-between shadow-sm">
+          <div className="flex items-start justify-between mb-3">
             <span className="font-mono text-[10px] text-[#8b949e] tracking-wider uppercase font-semibold">
               Monitored Repositories
             </span>
-            <span className="material-symbols-outlined text-[#8b949e] text-[16px]">account_tree</span>
+            <span className="material-symbols-outlined text-[#8b949e] text-[18px]">account_tree</span>
           </div>
-          <div className="flex items-baseline gap-2 mb-1">
-            <span className="font-display text-[24px] font-semibold text-[#f0f6fc]">
+          <div className="flex items-baseline gap-2 mb-2">
+            <span className="font-display text-[26px] font-semibold text-[#f0f6fc]">
               {combinedRepos.length}
             </span>
             <span className="font-mono text-[11px] text-[#8b949e]">connected</span>
@@ -238,29 +238,29 @@ export default function RepositoriesPage() {
         </div>
 
         {/* KPI 2 */}
-        <div className="rounded-lg bg-[#161b22] p-4 border border-[#30363d] flex flex-col justify-between">
-          <div className="flex items-start justify-between mb-2">
+        <div className="rounded-xl bg-[#161b22] p-5 border border-[#30363d] flex flex-col justify-between shadow-sm">
+          <div className="flex items-start justify-between mb-3">
             <span className="font-mono text-[10px] text-[#8b949e] tracking-wider uppercase font-semibold">
               Governance Policies
             </span>
-            <span className="material-symbols-outlined text-[#8b949e] text-[16px]">verified_user</span>
+            <span className="material-symbols-outlined text-[#8b949e] text-[18px]">verified_user</span>
           </div>
-          <div className="flex items-baseline gap-2 mb-1">
-            <span className="font-display text-[24px] font-semibold text-[#f0f6fc]">
+          <div className="flex items-baseline gap-2 mb-2">
+            <span className="font-display text-[26px] font-semibold text-[#f0f6fc]">
               {combinedRepos.length}
             </span>
             <span className="font-mono text-[11px] text-[#8b949e]">active profiles</span>
           </div>
           <div className="flex items-center gap-3 font-mono text-[11px] text-[#8b949e]">
-            <span className="flex items-center gap-1">
+            <span className="flex items-center gap-1.5">
               <span className="h-1.5 w-1.5 rounded-full bg-zinc-300"></span>
               2 High
             </span>
-            <span className="flex items-center gap-1">
+            <span className="flex items-center gap-1.5">
               <span className="h-1.5 w-1.5 rounded-full bg-zinc-400"></span>
               9 Std
             </span>
-            <span className="flex items-center gap-1">
+            <span className="flex items-center gap-1.5">
               <span className="h-1.5 w-1.5 rounded-full bg-zinc-500"></span>
               3 Rapid
             </span>
@@ -268,15 +268,15 @@ export default function RepositoriesPage() {
         </div>
 
         {/* KPI 3 */}
-        <div className="rounded-lg bg-[#161b22] p-4 border border-[#30363d] flex flex-col justify-between">
-          <div className="flex items-start justify-between mb-2">
+        <div className="rounded-xl bg-[#161b22] p-5 border border-[#30363d] flex flex-col justify-between shadow-sm">
+          <div className="flex items-start justify-between mb-3">
             <span className="font-mono text-[10px] text-[#8b949e] tracking-wider uppercase font-semibold">
               Active Rulebooks
             </span>
-            <span className="material-symbols-outlined text-[#8b949e] text-[16px]">gavel</span>
+            <span className="material-symbols-outlined text-[#8b949e] text-[18px]">gavel</span>
           </div>
-          <div className="flex items-baseline gap-2 mb-1">
-            <span className="font-display text-[24px] font-semibold text-[#f0f6fc]">8</span>
+          <div className="flex items-baseline gap-2 mb-2">
+            <span className="font-display text-[26px] font-semibold text-[#f0f6fc]">8</span>
             <span className="font-mono text-[11px] text-[#8b949e]">enforced</span>
           </div>
           <div className="flex items-center justify-between text-[#8b949e] font-mono text-[11px]">
@@ -286,18 +286,18 @@ export default function RepositoriesPage() {
         </div>
 
         {/* KPI 4 */}
-        <div className="rounded-lg bg-[#161b22] p-4 border border-[#30363d] flex flex-col justify-between">
-          <div className="flex items-start justify-between mb-2">
+        <div className="rounded-xl bg-[#161b22] p-5 border border-[#30363d] flex flex-col justify-between shadow-sm">
+          <div className="flex items-start justify-between mb-3">
             <span className="font-mono text-[10px] text-[#8b949e] tracking-wider uppercase font-semibold">
               Webhook Pipeline
             </span>
-            <span className="px-1.5 py-0.5 rounded bg-[#21262d] border border-[#30363d] text-[#8b949e] font-mono text-[10px]">
+            <span className="px-2 py-0.5 rounded bg-[#21262d] border border-[#30363d] text-[#8b949e] font-mono text-[10px]">
               18ms avg
             </span>
           </div>
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex items-center gap-2 mb-2">
             <span className="h-2 w-2 rounded-full bg-emerald-400"></span>
-            <span className="font-display text-[24px] font-semibold text-[#f0f6fc]">100%</span>
+            <span className="font-display text-[26px] font-semibold text-[#f0f6fc]">100%</span>
             <span className="font-mono text-[11px] text-emerald-400 font-medium">Operational</span>
           </div>
           <div className="flex items-center justify-between text-[#8b949e] font-mono text-[11px]">
@@ -308,33 +308,33 @@ export default function RepositoriesPage() {
       </section>
 
       {/* Filter & Search Control Workbench */}
-      <section className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 p-2 rounded-lg bg-[#161b22] border border-[#30363d] mb-6">
+      <section className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4 p-4 rounded-xl bg-[#161b22] border border-[#30363d] mb-8 shadow-sm">
         {/* Search Field */}
         <div className="relative flex-1 max-w-2xl">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-[#8b949e]">
-            <span className="material-symbols-outlined text-[16px]">search</span>
+          <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-[#8b949e]">
+            <span className="material-symbols-outlined text-[17px]">search</span>
           </div>
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full h-8 pl-8 pr-12 bg-[#0d1117] text-[#f0f6fc] placeholder:text-[#8b949e] font-sans text-[12px] rounded-md border border-[#30363d] focus:border-[#8b949e] focus:outline-none focus:ring-0 transition-colors"
+            className="w-full h-9 pl-9 pr-12 bg-[#0d1117] text-[#f0f6fc] placeholder:text-[#8b949e] font-sans text-[12px] rounded-md border border-[#30363d] focus:border-[#8b949e] focus:outline-none focus:ring-0 transition-colors"
             placeholder="Search repositories by name, owner, or installation ID..."
             type="text"
           />
-          <div className="absolute inset-y-0 right-0 pr-2 flex items-center pointer-events-none">
-            <kbd className="px-1 py-0.5 bg-[#21262d] border border-[#30363d] rounded text-[#8b949e] font-mono text-[10px]">
+          <div className="absolute inset-y-0 right-0 pr-2.5 flex items-center pointer-events-none">
+            <kbd className="px-1.5 py-0.5 bg-[#21262d] border border-[#30363d] rounded text-[#8b949e] font-mono text-[10px]">
               ⌘K
             </kbd>
           </div>
         </div>
 
         {/* Segmented Filter & Controls */}
-        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap justify-between lg:justify-end">
+        <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap justify-between lg:justify-end">
           {/* Segmented Buttons */}
           <div className="flex p-0.5 bg-[#0d1117] rounded-md border border-[#30363d]">
             <button
               onClick={() => setFilterTab("all")}
-              className={`px-2.5 py-1 rounded font-medium text-[12px] transition-colors ${
+              className={`px-3 py-1.5 rounded font-medium text-[12px] transition-colors ${
                 filterTab === "all"
                   ? "bg-[#21262d] text-[#f0f6fc] shadow-sm"
                   : "text-[#8b949e] hover:text-[#f0f6fc]"
@@ -345,7 +345,7 @@ export default function RepositoriesPage() {
             </button>
             <button
               onClick={() => setFilterTab("active")}
-              className={`px-2.5 py-1 rounded font-medium text-[12px] transition-colors ${
+              className={`px-3 py-1.5 rounded font-medium text-[12px] transition-colors ${
                 filterTab === "active"
                   ? "bg-[#21262d] text-[#f0f6fc] shadow-sm"
                   : "text-[#8b949e] hover:text-[#f0f6fc]"
@@ -356,7 +356,7 @@ export default function RepositoriesPage() {
             </button>
             <button
               onClick={() => setFilterTab("custom")}
-              className={`px-2.5 py-1 rounded font-medium text-[12px] transition-colors ${
+              className={`px-3 py-1.5 rounded font-medium text-[12px] transition-colors ${
                 filterTab === "custom"
                   ? "bg-[#21262d] text-[#f0f6fc] shadow-sm"
                   : "text-[#8b949e] hover:text-[#f0f6fc]"
@@ -368,9 +368,9 @@ export default function RepositoriesPage() {
           </div>
 
           {/* Quick Sorting Dropdown & View Layout Toggle */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2">
             <button
-              className="h-8 px-2.5 bg-[#0d1117] border border-[#30363d] hover:border-[#8b949e] rounded-md text-[#c9d1d9] font-medium text-[12px] flex items-center gap-1.5 transition-colors"
+              className="h-9 px-3 bg-[#0d1117] border border-[#30363d] hover:border-[#8b949e] rounded-md text-[#c9d1d9] font-medium text-[12px] flex items-center gap-1.5 transition-colors"
               type="button"
             >
               <span className="material-symbols-outlined text-[15px] text-[#8b949e]">sort</span>
@@ -382,22 +382,22 @@ export default function RepositoriesPage() {
               <button
                 onClick={() => setViewLayout("grid")}
                 aria-label="Grid View"
-                className={`p-1 rounded transition-colors ${
+                className={`p-1.5 rounded transition-colors ${
                   viewLayout === "grid" ? "bg-[#21262d] text-[#f0f6fc]" : "text-[#8b949e] hover:text-[#f0f6fc]"
                 }`}
                 type="button"
               >
-                <span className="material-symbols-outlined text-[15px]">grid_view</span>
+                <span className="material-symbols-outlined text-[16px]">grid_view</span>
               </button>
               <button
                 onClick={() => setViewLayout("list")}
                 aria-label="List View"
-                className={`p-1 rounded transition-colors ${
+                className={`p-1.5 rounded transition-colors ${
                   viewLayout === "list" ? "bg-[#21262d] text-[#f0f6fc]" : "text-[#8b949e] hover:text-[#f0f6fc]"
                 }`}
                 type="button"
               >
-                <span className="material-symbols-outlined text-[15px]">view_list</span>
+                <span className="material-symbols-outlined text-[16px]">view_list</span>
               </button>
             </div>
           </div>
@@ -408,41 +408,41 @@ export default function RepositoriesPage() {
       <div
         className={
           viewLayout === "grid"
-            ? "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"
-            : "flex flex-col gap-3"
+            ? "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6"
+            : "flex flex-col gap-4"
         }
       >
         {filteredRepos.map((repo) => (
           <article
             key={repo.id}
-            className="flex flex-col justify-between rounded-lg bg-[#161b22] border border-[#30363d] hover:border-[#8b949e] transition-colors duration-150"
+            className="flex flex-col justify-between rounded-xl bg-[#161b22] border border-[#30363d] hover:border-[#8b949e] transition-colors duration-150 shadow-sm"
           >
             <div>
               {/* Card Header */}
-              <div className="p-4 flex flex-col gap-1.5">
-                <div className="flex items-center justify-between gap-2">
+              <div className="p-5 flex flex-col gap-2">
+                <div className="flex items-center justify-between gap-3">
                   <a
                     className="group/link flex items-center gap-1.5 text-[#f0f6fc] hover:text-[#58a6ff] transition-colors min-w-0"
                     href={`https://github.com/${repo.repo_full_name}`}
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    <span className="font-mono text-[13px] font-semibold truncate">{repo.repo_full_name}</span>
-                    <span className="material-symbols-outlined text-[14px] text-[#8b949e] group-hover/link:text-[#58a6ff] shrink-0">
+                    <span className="font-mono text-[13.5px] font-semibold truncate">{repo.repo_full_name}</span>
+                    <span className="material-symbols-outlined text-[15px] text-[#8b949e] group-hover/link:text-[#58a6ff] shrink-0">
                       arrow_outward
                     </span>
                   </a>
                   {/* Policy Pill */}
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#21262d] text-[#c9d1d9] border border-[#30363d] font-mono text-[10px] uppercase font-medium shrink-0">
-                    <span className="material-symbols-outlined text-[12px] text-[#8b949e]">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[#21262d] text-[#c9d1d9] border border-[#30363d] font-mono text-[10.5px] uppercase font-medium shrink-0">
+                    <span className="material-symbols-outlined text-[13px] text-[#8b949e]">
                       {repo.tierIcon}
                     </span>
                     {repo.policyTier}
                   </span>
                 </div>
-                <div className="flex items-center justify-between font-mono text-[11px] text-[#8b949e]">
+                <div className="flex items-center justify-between font-mono text-[11px] text-[#8b949e] pt-1">
                   <span>Install #{repo.installation_id}</span>
-                  <span className="text-[#8b949e] truncate">{repo.models}</span>
+                  <span className="text-[#8b949e] truncate max-w-[200px] text-right">{repo.models}</span>
                 </div>
               </div>
 
@@ -450,10 +450,10 @@ export default function RepositoriesPage() {
               <div className="h-px w-full bg-[#30363d]"></div>
 
               {/* Card Body */}
-              <div className="p-4 flex flex-col gap-3">
+              <div className="p-5 flex flex-col gap-4">
                 <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-mono text-[10px] text-[#8b949e] uppercase tracking-wider font-semibold">
+                  <div className="flex items-center justify-between mb-2.5">
+                    <span className="font-mono text-[10.5px] text-[#8b949e] uppercase tracking-wider font-semibold">
                       Active Inspection Modules
                     </span>
                     <span className="font-mono text-[11px] text-[#f0f6fc]">
@@ -461,11 +461,11 @@ export default function RepositoriesPage() {
                     </span>
                   </div>
                   {/* Modules mini tags */}
-                  <div className="flex flex-wrap gap-1">
+                  <div className="flex flex-wrap gap-1.5">
                     {repo.activeModules.map((mod) => (
                       <span
                         key={mod}
-                        className="px-1.5 py-0.5 rounded bg-[#21262d] text-[#8b949e] border border-[#30363d] font-mono text-[10px]"
+                        className="px-2 py-0.5 rounded bg-[#21262d] text-[#8b949e] border border-[#30363d] font-mono text-[10.5px]"
                       >
                         {mod}
                       </span>
@@ -473,10 +473,10 @@ export default function RepositoriesPage() {
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between pt-0.5 text-[12px]">
+                <div className="flex items-center justify-between pt-1 text-[12px]">
                   <span className="text-[#8b949e]">Architectural Rulebook:</span>
                   <span className="inline-flex items-center gap-1.5 text-[#c9d1d9] font-mono text-[11px]">
-                    <span className="material-symbols-outlined text-[14px] text-[#8b949e]">description</span>
+                    <span className="material-symbols-outlined text-[15px] text-[#8b949e]">description</span>
                     Configured ({repo.rulesCount} rules)
                   </span>
                 </div>
@@ -487,23 +487,23 @@ export default function RepositoriesPage() {
             <div className="h-px w-full bg-[#30363d]"></div>
 
             {/* Card Footer */}
-            <div className="px-4 py-2.5 bg-[#0d1117]/50 rounded-b-lg flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5">
+            <div className="px-5 py-3.5 bg-[#0d1117]/50 rounded-b-xl flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
                 <span className="font-mono text-[11px] text-emerald-400 font-medium">Webhook Active</span>
               </div>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-2">
                 <button
                   onClick={() => setActiveModalRepo(repo)}
-                  className="flex items-center gap-1 px-2.5 h-7 rounded-md bg-[#21262d] hover:bg-[#30363d] text-[#c9d1d9] hover:text-[#f0f6fc] font-medium text-[11px] border border-[#30363d] transition-colors"
+                  className="flex items-center gap-1.5 px-3 h-7.5 py-1 rounded-md bg-[#21262d] hover:bg-[#30363d] text-[#c9d1d9] hover:text-[#f0f6fc] font-medium text-[11px] border border-[#30363d] transition-colors"
                   type="button"
                 >
-                  <span className="material-symbols-outlined text-[13px] text-[#8b949e]">tune</span>
+                  <span className="material-symbols-outlined text-[14px] text-[#8b949e]">tune</span>
                   <span>Policy &amp; Rules</span>
                 </button>
                 <button
                   onClick={() => fetchData(true)}
-                  className="p-1 h-7 w-7 rounded-md bg-[#21262d] hover:bg-[#30363d] text-[#8b949e] hover:text-[#f0f6fc] border border-[#30363d] flex items-center justify-center transition-colors"
+                  className="p-1.5 h-7.5 w-7.5 rounded-md bg-[#21262d] hover:bg-[#30363d] text-[#8b949e] hover:text-[#f0f6fc] border border-[#30363d] flex items-center justify-center transition-colors"
                   title="Sync PRs"
                   type="button"
                 >
@@ -516,14 +516,14 @@ export default function RepositoriesPage() {
       </div>
 
       {/* Bottom Inline Audit / Quick Telemetry Ribbon */}
-      <section className="mt-6 p-4 rounded-lg bg-[#161b22] border border-[#30363d] flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-md bg-[#21262d] text-[#c9d1d9] border border-[#30363d]">
-            <span className="material-symbols-outlined text-[18px]">hub</span>
+      <section className="mt-8 p-5 rounded-xl bg-[#161b22] border border-[#30363d] flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm">
+        <div className="flex items-center gap-3.5">
+          <div className="p-2.5 rounded-lg bg-[#21262d] text-[#c9d1d9] border border-[#30363d]">
+            <span className="material-symbols-outlined text-[20px]">hub</span>
           </div>
           <div>
-            <p className="text-[13px] font-semibold text-[#f0f6fc]">Auto-Discovery Worker Active</p>
-            <p className="font-mono text-[11px] text-[#8b949e]">
+            <p className="text-[13.5px] font-semibold text-[#f0f6fc]">Auto-Discovery Worker Active</p>
+            <p className="font-mono text-[11px] text-[#8b949e] mt-0.5">
               Scanning for new GitHub repository additions every 15 minutes across org AcmeCorpFinTech.
             </p>
           </div>
@@ -532,7 +532,7 @@ export default function RepositoriesPage() {
           <span className="text-[#8b949e]">Last check: 2 min ago</span>
           <button
             onClick={() => fetchData(true)}
-            className="text-[#c9d1d9] hover:text-[#f0f6fc] flex items-center gap-1 transition-colors underline-offset-2 hover:underline"
+            className="text-[#c9d1d9] hover:text-[#f0f6fc] flex items-center gap-1.5 transition-colors underline-offset-2 hover:underline font-medium"
             type="button"
           >
             <span>Force sync check</span>
