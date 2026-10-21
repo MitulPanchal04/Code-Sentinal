@@ -195,7 +195,46 @@ export const api = {
         body: JSON.stringify({ model_id: modelId }),
       }
     ),
+
+  getTelemetry: (repo?: string) =>
+    apiFetch<TelemetryResponse>(
+      `/api/analytics/telemetry${repo ? `?repo=${encodeURIComponent(repo)}` : ""}`
+    ),
 };
+
+export interface AgentFleetItem {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  invocations: number;
+  findings_count: number;
+  tokens: number;
+  cost_usd: number;
+  avg_latency: string;
+  status: "active" | "disabled" | string;
+}
+
+export interface TelemetryResponse {
+  total_reviews: number;
+  total_repos: number;
+  pass_rate_pct: number;
+  blocker_defects: number;
+  avg_merge_score: number;
+  total_cost_usd: number;
+  total_tokens: number;
+  avg_latency_seconds: number;
+  findings_by_module: {
+    security: number;
+    bugs: number;
+    error_handling: number;
+    style: number;
+    test_coverage: number;
+    comment_accuracy: number;
+  };
+  total_findings: number;
+  agent_fleet: AgentFleetItem[];
+}
 
 export interface ModelOption {
   id: string;

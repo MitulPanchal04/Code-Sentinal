@@ -3,9 +3,10 @@
 import { useEffect, useState, useCallback, useMemo, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { api, Review, PublicConfig } from "@/lib/api";
+import { api, Review, PublicConfig, TelemetryResponse } from "@/lib/api";
+import { formatDate } from "@/lib/utils";
 
-interface DemoReviewItem {
+interface ReviewRowItem {
   id: string | number;
   pr_number: number;
   pr_title: string;
@@ -22,95 +23,18 @@ interface DemoReviewItem {
   completed_ago: string;
 }
 
-const DEMO_REVIEWS: DemoReviewItem[] = [
-  {
-    id: 1,
-    pr_number: 142,
-    pr_title: "feat(billing): integrate multi-tenant Stripe webhooks",
-    repo_full_name: "acme-corp/payment-service",
-    branch_head: "feature/stripe-webhooks",
-    branch_base: "main",
-    sender_login: "octocat",
-    commit_sha: "4a9f82d",
-    verdict: "Merge Ready",
-    merge_score: "8.5 / 10",
-    findings: { crit: 1, warn: 2 },
-    cost_and_tokens: "$0.041 • 14.8k",
-    completed_ago: "8m ago",
-  },
-  {
-    id: 2,
-    pr_number: 89,
-    pr_title: "fix(auth): session expiration edge case",
-    repo_full_name: "acme-corp/auth-gateway",
-    branch_head: "fix/session-timeout",
-    branch_base: "main",
-    sender_login: "dev-lead",
-    commit_sha: "9b23ec1",
-    verdict: "In Progress",
-    merge_score: "Evaluating...",
-    findings: {},
-    progress: { completed_agents: 4, total_agents: 6, current_step: "style" },
-    cost_and_tokens: "Running...",
-    completed_ago: "1m ago",
-  },
-  {
-    id: 3,
-    pr_number: 67,
-    pr_title: "feat(sql): add raw customer query execution without tenant isolation",
-    repo_full_name: "acme-corp/core-api",
-    branch_head: "feat/raw-queries",
-    branch_base: "main",
-    sender_login: "junior-eng",
-    commit_sha: "1f48ad9",
-    verdict: "Blocked",
-    merge_score: "3.2 / 10",
-    findings: { crit: 2, warn: 3 },
-    cost_and_tokens: "$0.038 • 12.1k",
-    completed_ago: "24m ago",
-  },
-  {
-    id: 4,
-    pr_number: 54,
-    pr_title: "docs(api): update OpenAPI specs for v2 endpoints",
-    repo_full_name: "acme-corp/docs",
-    branch_head: "docs/openapi-v2",
-    branch_base: "main",
-    sender_login: "tech-writer",
-    commit_sha: "6c7d8e2",
-    verdict: "Merge Ready",
-    merge_score: "9.8 / 10",
-    findings: { info: 1 },
-    cost_and_tokens: "$0.012 • 4.2k",
-    completed_ago: "1h ago",
-  },
-  {
-    id: 5,
-    pr_number: 112,
-    pr_title: "refactor(cache): implement redis cluster connection pooling",
-    repo_full_name: "acme-corp/common-lib",
-    branch_head: "refactor/redis-pool",
-    branch_base: "main",
-    sender_login: "senior-dev",
-    commit_sha: "8a3b5c7",
-    verdict: "Changes Req",
-    merge_score: "6.4 / 10",
-    findings: { crit: 1, warn: 1 },
-    cost_and_tokens: "$0.045 • 16.2k",
-    completed_ago: "3h ago",
-  },
-];
-
 function ReviewsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [reviews, setReviews] = useState<Review[]>([]);
+  const [telemetry, setTelemetry] = useState<TelemetryResponse | null>(null);
   const [publicConfig, setPublicConfig] = useState<PublicConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [repoFilter, setRepoFilter] = useState(searchParams.get("repo") || "all");
   const [verdictFilter, setVerdictFilter] = useState("all");
+  const [authorFilter, setAuthorFilter] = useState("all");
   const [quickFilter, setQuickFilter] = useState<"none" | "attention" | "blocked" | "mine">("none");
 
   const fetchData = useCallback(async (isRefresh = false) => {
@@ -118,12 +42,13 @@ function ReviewsPageContent() {
     else setLoading(true);
 
     try {
-      const [reviewData, configData] = await Promise.allSettled([
+      const [reviewData, configData, telemetryData] = await Promise.allSettled([
         api.listReviews({
           repo: repoFilter !== "all" ? repoFilter : undefined,
           limit: 100,
         }),
         api.getPublicConfig(),
+        api.getTelemetry(repoFilter !== "all" ? repoFilter : undefined),
       ]);
 
       if (reviewData.status === "fulfilled") {
@@ -132,8 +57,11 @@ function ReviewsPageContent() {
       if (configData.status === "fulfilled") {
         setPublicConfig(configData.value);
       }
+      if (telemetryData.status === "fulfilled") {
+        setTelemetry(telemetryData.value);
+      }
     } catch (err: unknown) {
-      console.warn("Could not fetch reviews from backend, rendering sample review audit list:", err);
+      console.warn("Could not fetch reviews from backend:", err);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -158,12 +86,11 @@ function ReviewsPageContent() {
     return () => clearTimeout(timer);
   }, [reviews, fetchData]);
 
-  const displayRows: DemoReviewItem[] = useMemo(() => {
-    if (reviews.length === 0) return DEMO_REVIEWS;
+  const displayRows: ReviewRowItem[] = useMemo(() => {
+    if (reviews.length === 0) return [];
 
     return reviews.map((r) => {
-      // Determine verdict using r.verdict if present, or deterministic calculation
-      let verdict: DemoReviewItem["verdict"];
+      let verdict: ReviewRowItem["verdict"];
       if (r.verdict === "merge_ready") {
         verdict = "Merge Ready";
       } else if (r.verdict === "in_progress") {
@@ -189,6 +116,12 @@ function ReviewsPageContent() {
       const warnCount = r.findings?.filter((f) => f.severity === "warning").length || 0;
       const infoCount = r.findings?.filter((f) => f.severity === "info").length || 0;
 
+      const totalTokens = (r.input_tokens || 0) + (r.output_tokens || 0);
+      const costStr = r.estimated_cost_usd != null && r.estimated_cost_usd > 0
+        ? `$${r.estimated_cost_usd.toFixed(3)}`
+        : "$0.00";
+      const tokenStr = totalTokens > 0 ? `${(totalTokens / 1000).toFixed(1)}k` : "0k";
+
       return {
         id: r.id,
         pr_number: r.pr_number,
@@ -199,14 +132,48 @@ function ReviewsPageContent() {
         sender_login: r.author || "dev",
         commit_sha: r.commit_sha ? r.commit_sha.substring(0, 7) : "abcdef",
         verdict,
-        merge_score: verdict === "In Progress" ? "Evaluating..." : r.merge_score ? `${(r.merge_score * 2).toFixed(1)} / 10` : "8.0 / 10",
-        findings: { crit: critCount || undefined, warn: warnCount || undefined, info: infoCount || undefined },
+        merge_score: verdict === "In Progress"
+          ? "Evaluating..."
+          : r.merge_score !== null
+          ? `${(r.merge_score * 2).toFixed(1)} / 10`
+          : "—",
+        findings: {
+          crit: critCount || undefined,
+          warn: warnCount || undefined,
+          info: infoCount || undefined,
+        },
         progress: r.progress,
-        cost_and_tokens: verdict === "In Progress" ? "Running..." : "$0.041 • 14.8k",
-        completed_ago: "Recently",
+        cost_and_tokens: verdict === "In Progress" ? "Running..." : `${costStr} • ${tokenStr}`,
+        completed_ago: formatDate(r.created_at),
       };
     });
   }, [reviews]);
+
+  const availableRepos = useMemo(() => {
+    const set = new Set<string>();
+    reviews.forEach((r) => {
+      if (r.repo_full_name) set.add(r.repo_full_name);
+    });
+    return Array.from(set);
+  }, [reviews]);
+
+  const availableAuthors = useMemo(() => {
+    const set = new Set<string>();
+    reviews.forEach((r) => {
+      if (r.author) set.add(r.author);
+    });
+    return Array.from(set);
+  }, [reviews]);
+
+  const attentionCount = useMemo(
+    () => displayRows.filter((r) => r.verdict === "Changes Req" || r.verdict === "Blocked").length,
+    [displayRows]
+  );
+
+  const blockedCount = useMemo(
+    () => displayRows.filter((r) => r.verdict === "Blocked").length,
+    [displayRows]
+  );
 
   const filteredRows = useMemo(() => {
     return displayRows.filter((row) => {
@@ -220,14 +187,14 @@ function ReviewsPageContent() {
       }
       if (repoFilter !== "all" && row.repo_full_name !== repoFilter) return false;
       if (verdictFilter !== "all" && row.verdict !== verdictFilter) return false;
+      if (authorFilter !== "all" && row.sender_login !== authorFilter) return false;
 
       if (quickFilter === "attention" && row.verdict !== "Changes Req" && row.verdict !== "Blocked") return false;
       if (quickFilter === "blocked" && row.verdict !== "Blocked") return false;
-      if (quickFilter === "mine" && row.sender_login !== "octocat") return false;
 
       return true;
     });
-  }, [displayRows, searchQuery, repoFilter, verdictFilter, quickFilter]);
+  }, [displayRows, searchQuery, repoFilter, verdictFilter, authorFilter, quickFilter]);
 
   return (
     <div className="flex flex-col w-full pb-16 text-[#c9d1d9] antialiased">
@@ -295,12 +262,13 @@ function ReviewsPageContent() {
           </div>
           <div className="mt-4">
             <div className="flex items-baseline gap-2">
-              <span className="text-[26px] font-semibold text-[#f0f6fc] font-display">428</span>
-              <span className="text-[11px] font-mono text-emerald-400 font-semibold flex items-center">
-                <span className="material-symbols-outlined text-[13px]">trending_up</span> +12%
+              <span className="text-[26px] font-semibold text-[#f0f6fc] font-display">
+                {telemetry?.total_reviews ?? reviews.length}
               </span>
             </div>
-            <p className="text-[11px] text-[#8b949e] font-mono mt-1">Across 14 synchronized repositories</p>
+            <p className="text-[11px] text-[#8b949e] font-mono mt-1">
+              Across {telemetry?.total_repos ?? availableRepos.length} synchronized {telemetry?.total_repos === 1 ? "repository" : "repositories"}
+            </p>
           </div>
         </div>
 
@@ -316,12 +284,13 @@ function ReviewsPageContent() {
           </div>
           <div className="mt-4">
             <div className="flex items-baseline gap-2">
-              <span className="text-[26px] font-semibold text-emerald-400 font-display">89.4%</span>
-              <span className="text-[11px] font-mono text-emerald-400 font-semibold flex items-center">
-                <span className="material-symbols-outlined text-[13px]">trending_up</span> +2.1%
+              <span className="text-[26px] font-semibold text-emerald-400 font-display">
+                {telemetry?.pass_rate_pct != null ? `${telemetry.pass_rate_pct}%` : "0%"}
               </span>
             </div>
-            <p className="text-[11px] text-[#8b949e] font-mono mt-1">383 PRs approved first-pass</p>
+            <p className="text-[11px] text-[#8b949e] font-mono mt-1">
+              {Math.round(((telemetry?.total_reviews ?? reviews.length) * (telemetry?.pass_rate_pct ?? 0)) / 100)} PRs approved
+            </p>
           </div>
         </div>
 
@@ -337,8 +306,10 @@ function ReviewsPageContent() {
           </div>
           <div className="mt-4">
             <div className="flex items-baseline gap-2">
-              <span className="text-[26px] font-semibold text-red-400 font-display">39</span>
-              <span className="text-[11px] font-mono text-red-400 font-medium">High severity</span>
+              <span className="text-[26px] font-semibold text-red-400 font-display">
+                {telemetry?.blocker_defects ?? 0}
+              </span>
+              <span className="text-[11px] font-mono text-red-400 font-medium">Critical severity</span>
             </div>
             <p className="text-[11px] text-[#8b949e] font-mono mt-1">Security &amp; logic flaws intercepted</p>
           </div>
@@ -356,8 +327,9 @@ function ReviewsPageContent() {
           </div>
           <div className="mt-4">
             <div className="flex items-baseline gap-2">
-              <span className="text-[26px] font-semibold text-[#f0f6fc] font-display">4.6s</span>
-              <span className="text-[11px] font-mono text-[#8b949e] font-medium">P95: 7.2s</span>
+              <span className="text-[26px] font-semibold text-[#f0f6fc] font-display">
+                {telemetry?.avg_latency_seconds ? `${telemetry.avg_latency_seconds}s` : "0.0s"}
+              </span>
             </div>
             <p className="text-[11px] text-[#8b949e] font-mono mt-1">6 parallel specialized inspection agents</p>
           </div>
@@ -386,7 +358,7 @@ function ReviewsPageContent() {
         </div>
 
         {/* Filter Dropdowns Row */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {/* Dropdown 1: Repository */}
           <div className="relative">
             <select
@@ -394,12 +366,12 @@ function ReviewsPageContent() {
               onChange={(e) => setRepoFilter(e.target.value)}
               className="w-full h-9 pl-3 pr-8 text-[12px] bg-[#0d1117] border border-[#30363d] rounded-md text-[#c9d1d9] appearance-none focus:outline-none cursor-pointer truncate"
             >
-              <option value="all">Repository: All Repositories</option>
-              <option value="acme-corp/payment-service">acme-corp/payment-service</option>
-              <option value="acme-corp/auth-gateway">acme-corp/auth-gateway</option>
-              <option value="acme-corp/core-api">acme-corp/core-api</option>
-              <option value="acme-corp/docs">acme-corp/docs</option>
-              <option value="acme-corp/common-lib">acme-corp/common-lib</option>
+              <option value="all">Repository: All ({availableRepos.length})</option>
+              {availableRepos.map((repo) => (
+                <option key={repo} value={repo}>
+                  {repo}
+                </option>
+              ))}
             </select>
             <span className="material-symbols-outlined text-[15px] text-[#8b949e] absolute right-2.5 top-2.5 pointer-events-none">
               expand_more
@@ -424,41 +396,32 @@ function ReviewsPageContent() {
             </span>
           </div>
 
-          {/* Dropdown 3: Module */}
+          {/* Dropdown 3: Author */}
           <div className="relative">
-            <select className="w-full h-9 pl-3 pr-8 text-[12px] bg-[#0d1117] border border-[#30363d] rounded-md text-[#c9d1d9] appearance-none focus:outline-none cursor-pointer">
-              <option>Module: All Squads</option>
-              <option>Security Sentinel</option>
-              <option>Logic &amp; Concurrency</option>
-              <option>Defensive Error</option>
-              <option>Test Coverage</option>
+            <select
+              value={authorFilter}
+              onChange={(e) => setAuthorFilter(e.target.value)}
+              className="w-full h-9 pl-3 pr-8 text-[12px] bg-[#0d1117] border border-[#30363d] rounded-md text-[#c9d1d9] appearance-none focus:outline-none cursor-pointer"
+            >
+              <option value="all">Author: All ({availableAuthors.length})</option>
+              {availableAuthors.map((author) => (
+                <option key={author} value={author}>
+                  @{author}
+                </option>
+              ))}
             </select>
             <span className="material-symbols-outlined text-[15px] text-[#8b949e] absolute right-2.5 top-2.5 pointer-events-none">
               expand_more
             </span>
           </div>
 
-          {/* Dropdown 4: Author */}
-          <div className="relative">
-            <select className="w-full h-9 pl-3 pr-8 text-[12px] bg-[#0d1117] border border-[#30363d] rounded-md text-[#c9d1d9] appearance-none focus:outline-none cursor-pointer">
-              <option>Author: All Contributors</option>
-              <option>@octocat</option>
-              <option>@dev-lead</option>
-              <option>@junior-eng</option>
-              <option>@senior-dev</option>
-            </select>
-            <span className="material-symbols-outlined text-[15px] text-[#8b949e] absolute right-2.5 top-2.5 pointer-events-none">
-              expand_more
-            </span>
-          </div>
-
-          {/* Dropdown 5: Date Range */}
+          {/* Dropdown 4: Date Range */}
           <div className="relative col-span-2 md:col-span-1">
             <select className="w-full h-9 pl-3 pr-8 text-[12px] bg-[#0d1117] border border-[#30363d] rounded-md text-[#c9d1d9] appearance-none focus:outline-none cursor-pointer">
-              <option>Date: Last 30 Days</option>
+              <option>Date: All History</option>
               <option>Today</option>
               <option>Last 7 Days</option>
-              <option>Last 90 Days</option>
+              <option>Last 30 Days</option>
             </select>
             <span className="material-symbols-outlined text-[15px] text-[#8b949e] absolute right-2.5 top-2.5 pointer-events-none">
               expand_more
@@ -480,7 +443,7 @@ function ReviewsPageContent() {
             >
               <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
               Needs Attention
-              <span className="font-mono text-[10px] text-amber-400 font-semibold">14</span>
+              <span className="font-mono text-[10px] text-amber-400 font-semibold">{attentionCount}</span>
             </button>
             <button
               onClick={() => setQuickFilter(quickFilter === "blocked" ? "none" : "blocked")}
@@ -492,18 +455,7 @@ function ReviewsPageContent() {
             >
               <span className="w-1.5 h-1.5 rounded-full bg-red-400"></span>
               Blocked by Invariants
-              <span className="font-mono text-[10px] text-red-400 font-semibold">3</span>
-            </button>
-            <button
-              onClick={() => setQuickFilter(quickFilter === "mine" ? "none" : "mine")}
-              className={`px-3 py-1 rounded-full border text-[11px] flex items-center gap-1.5 transition-colors ${
-                quickFilter === "mine"
-                  ? "bg-[#21262d] border-emerald-500 text-[#f0f6fc]"
-                  : "bg-[#0d1117] border-[#30363d] text-[#c9d1d9] hover:border-emerald-500"
-              }`}
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-              Mine (@octocat)
+              <span className="font-mono text-[10px] text-red-400 font-semibold">{blockedCount}</span>
             </button>
           </div>
           {/* Reset Filters */}
@@ -512,6 +464,7 @@ function ReviewsPageContent() {
               setSearchQuery("");
               setRepoFilter("all");
               setVerdictFilter("all");
+              setAuthorFilter("all");
               setQuickFilter("none");
             }}
             className="text-[#58a6ff] hover:text-[#79c0ff] text-[11px] flex items-center gap-1.5 transition-colors font-medium"
@@ -541,135 +494,162 @@ function ReviewsPageContent() {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#30363d]/60 text-[12px]">
-              {filteredRows.map((row) => (
-                <tr key={row.id} className="hover:bg-[#21262d]/40 transition-colors group">
-                  <td className="py-4 px-5 whitespace-nowrap">
-                    {row.verdict === "Merge Ready" ? (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-medium text-[11px]">
-                        <span className="material-symbols-outlined text-[13px]">check_circle</span>
-                        Merge Ready
-                      </span>
-                    ) : row.verdict === "In Progress" ? (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/30 font-medium text-[11px]">
-                        <span className="material-symbols-outlined text-[13px] animate-spin">progress_activity</span>
-                        In Progress
-                      </span>
-                    ) : row.verdict === "Blocked" ? (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/30 font-medium text-[11px]">
-                        <span className="material-symbols-outlined text-[13px]">block</span>
-                        Blocked
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30 font-medium text-[11px]">
-                        <span className="material-symbols-outlined text-[13px]">warning</span>
-                        Changes Req
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-4 px-5">
-                    <div className="flex flex-col">
-                      <Link
-                        className="font-medium text-[#f0f6fc] hover:text-[#58a6ff] transition-colors flex items-center gap-1.5 group-hover:underline"
-                        href={`/dashboard/reviews/${row.id}`}
-                      >
-                        <span className="font-mono text-[#58a6ff]">#{row.pr_number}</span>
-                        <span>{row.pr_title}</span>
-                      </Link>
-                      <span className="text-[11px] font-mono text-[#8b949e] flex items-center gap-2 mt-0.5">
-                        <span>SHA: {row.commit_sha}</span>
-                        <span>•</span>
-                        <span>+412 / -88 lines</span>
-                      </span>
-                    </div>
-                  </td>
-                  <td className="py-4 px-5 whitespace-nowrap font-mono text-[#8b949e]">
-                    <span className="px-2 py-0.5 rounded bg-[#0d1117] border border-[#30363d]">
-                      {row.repo_full_name}
-                    </span>
-                  </td>
-                  <td className="py-4 px-5 whitespace-nowrap font-mono text-[11px] text-[#c9d1d9]">
-                    <span className="flex items-center gap-1.5">
-                      <span className="text-[#8b949e]">{row.branch_head}</span>
-                      <span className="material-symbols-outlined text-[12px] text-[#484f58]">arrow_forward</span>
-                      <span className="font-medium text-[#f0f6fc]">{row.branch_base}</span>
-                    </span>
-                  </td>
-                  <td className="py-4 px-5 whitespace-nowrap">
-                    <div className="flex items-center gap-2 font-mono text-[11px]">
-                      <div className="w-5.5 h-5.5 rounded-full bg-[#21262d] border border-[#30363d] flex items-center justify-center text-[10px] font-bold text-[#c9d1d9]">
-                        {row.sender_login.substring(0, 2).toUpperCase()}
-                      </div>
-                      <span className="text-[#c9d1d9]">@{row.sender_login}</span>
-                    </div>
-                  </td>
-                  <td className="py-4 px-5 whitespace-nowrap">
-                    <span className="font-mono font-bold text-[11px] px-2.5 py-0.5 rounded-full bg-[#0d1117] text-[#f0f6fc] border border-[#30363d]">
-                      {row.merge_score}
-                    </span>
-                  </td>
-                  <td className="py-4 px-5 whitespace-nowrap">
-                    {row.verdict === "In Progress" ? (
-                      <div className="flex items-center gap-2">
-                        <span className="material-symbols-outlined text-[14px] text-[#58a6ff] animate-spin">
-                          progress_activity
+              {filteredRows.length > 0 ? (
+                filteredRows.map((row) => (
+                  <tr key={row.id} className="hover:bg-[#21262d]/40 transition-colors group">
+                    <td className="py-4 px-5 whitespace-nowrap">
+                      {row.verdict === "Merge Ready" ? (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-medium text-[11px]">
+                          <span className="material-symbols-outlined text-[13px]">check_circle</span>
+                          Merge Ready
                         </span>
-                        <span className="font-mono text-[11px] text-[#58a6ff] font-medium">
-                          Inspecting ({row.progress?.completed_agents ?? 0}/{row.progress?.total_agents ?? 6} agents done)
+                      ) : row.verdict === "In Progress" ? (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/30 font-medium text-[11px]">
+                          <span className="material-symbols-outlined text-[13px] animate-spin">progress_activity</span>
+                          In Progress
+                        </span>
+                      ) : row.verdict === "Blocked" ? (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/30 font-medium text-[11px]">
+                          <span className="material-symbols-outlined text-[13px]">block</span>
+                          Blocked
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30 font-medium text-[11px]">
+                          <span className="material-symbols-outlined text-[13px]">warning</span>
+                          Changes Req
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-4 px-5">
+                      <div className="flex flex-col">
+                        <Link
+                          className="font-medium text-[#f0f6fc] hover:text-[#58a6ff] transition-colors flex items-center gap-1.5 group-hover:underline"
+                          href={`/dashboard/reviews/${row.id}`}
+                        >
+                          <span className="font-mono text-[#58a6ff]">#{row.pr_number}</span>
+                          <span>{row.pr_title}</span>
+                        </Link>
+                        <span className="text-[11px] font-mono text-[#8b949e] flex items-center gap-2 mt-0.5">
+                          <span>SHA: {row.commit_sha}</span>
                         </span>
                       </div>
-                    ) : (
-                      <div className="flex items-center gap-1.5 font-mono text-[10px]">
-                        {row.findings.crit ? (
-                          <span className="px-2 py-0.5 rounded bg-red-500/20 text-red-400 font-semibold border border-red-500/30">
-                            {row.findings.crit} crit
-                          </span>
-                        ) : null}
-                        {row.findings.warn ? (
-                          <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 font-semibold border border-amber-500/30">
-                            {row.findings.warn} warn
-                          </span>
-                        ) : null}
-                        {row.findings.info ? (
-                          <span className="px-2 py-0.5 rounded bg-[#21262d] text-[#8b949e] border border-[#30363d]">
-                            {row.findings.info} info
-                          </span>
-                        ) : null}
-                        {!row.findings.crit && !row.findings.warn && !row.findings.info ? (
-                          <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                            0 findings
-                          </span>
-                        ) : null}
+                    </td>
+                    <td className="py-4 px-5 whitespace-nowrap font-mono text-[#8b949e]">
+                      <span className="px-2 py-0.5 rounded bg-[#0d1117] border border-[#30363d]">
+                        {row.repo_full_name}
+                      </span>
+                    </td>
+                    <td className="py-4 px-5 whitespace-nowrap font-mono text-[11px] text-[#c9d1d9]">
+                      <span className="flex items-center gap-1.5">
+                        <span className="text-[#8b949e]">{row.branch_head}</span>
+                        <span className="material-symbols-outlined text-[12px] text-[#484f58]">arrow_forward</span>
+                        <span className="font-medium text-[#f0f6fc]">{row.branch_base}</span>
+                      </span>
+                    </td>
+                    <td className="py-4 px-5 whitespace-nowrap">
+                      <div className="flex items-center gap-2 font-mono text-[11px]">
+                        <div className="w-5.5 h-5.5 rounded-full bg-[#21262d] border border-[#30363d] flex items-center justify-center text-[10px] font-bold text-[#c9d1d9]">
+                          {row.sender_login.substring(0, 2).toUpperCase()}
+                        </div>
+                        <span className="text-[#c9d1d9]">@{row.sender_login}</span>
                       </div>
-                    )}
-                  </td>
-                  <td className="py-4 px-5 whitespace-nowrap font-mono text-[#8b949e] text-[11px]">
-                    {row.cost_and_tokens}
-                  </td>
-                  <td className="py-4 px-5 whitespace-nowrap font-mono text-[#8b949e] text-[11px]">
-                    {row.completed_ago}
-                  </td>
-                  <td className="py-4 px-5 text-right whitespace-nowrap">
-                    <div className="inline-flex items-center gap-2">
-                      <Link
-                        href={`/dashboard/reviews/${row.id}`}
-                        className="px-3 py-1.5 rounded-md bg-[#21262d] hover:bg-[#30363d] text-[#f0f6fc] font-medium text-[11px] transition-colors flex items-center gap-1.5 border border-[#30363d]"
-                      >
-                        <span>View Analysis</span>
-                        <span className="material-symbols-outlined text-[13px]">arrow_forward</span>
-                      </Link>
-                      <a
-                        href={`https://github.com/${row.repo_full_name}/pull/${row.pr_number}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="p-1.5 rounded-md text-[#8b949e] hover:text-[#f0f6fc] hover:bg-[#21262d] transition-colors"
-                        title="Open in GitHub"
-                      >
-                        <span className="material-symbols-outlined text-[16px]">open_in_new</span>
-                      </a>
+                    </td>
+                    <td className="py-4 px-5 whitespace-nowrap">
+                      <span className="font-mono font-bold text-[11px] px-2.5 py-0.5 rounded-full bg-[#0d1117] text-[#f0f6fc] border border-[#30363d]">
+                        {row.merge_score}
+                      </span>
+                    </td>
+                    <td className="py-4 px-5 whitespace-nowrap">
+                      {row.verdict === "In Progress" ? (
+                        <div className="flex items-center gap-2">
+                          <span className="material-symbols-outlined text-[14px] text-[#58a6ff] animate-spin">
+                            progress_activity
+                          </span>
+                          <span className="font-mono text-[11px] text-[#58a6ff] font-medium">
+                            Inspecting ({row.progress?.completed_agents ?? 0}/{row.progress?.total_agents ?? 6} agents done)
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1.5 font-mono text-[10px]">
+                          {row.findings.crit ? (
+                            <span className="px-2 py-0.5 rounded bg-red-500/20 text-red-400 font-semibold border border-red-500/30">
+                              {row.findings.crit} crit
+                            </span>
+                          ) : null}
+                          {row.findings.warn ? (
+                            <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 font-semibold border border-amber-500/30">
+                              {row.findings.warn} warn
+                            </span>
+                          ) : null}
+                          {row.findings.info ? (
+                            <span className="px-2 py-0.5 rounded bg-[#21262d] text-[#8b949e] border border-[#30363d]">
+                              {row.findings.info} info
+                            </span>
+                          ) : null}
+                          {!row.findings.crit && !row.findings.warn && !row.findings.info ? (
+                            <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                              0 findings
+                            </span>
+                          ) : null}
+                        </div>
+                      )}
+                    </td>
+                    <td className="py-4 px-5 whitespace-nowrap font-mono text-[#8b949e] text-[11px]">
+                      {row.cost_and_tokens}
+                    </td>
+                    <td className="py-4 px-5 whitespace-nowrap font-mono text-[#8b949e] text-[11px]">
+                      {row.completed_ago}
+                    </td>
+                    <td className="py-4 px-5 text-right whitespace-nowrap">
+                      <div className="inline-flex items-center gap-2">
+                        <Link
+                          href={`/dashboard/reviews/${row.id}`}
+                          className="px-3 py-1.5 rounded-md bg-[#21262d] hover:bg-[#30363d] text-[#f0f6fc] font-medium text-[11px] transition-colors flex items-center gap-1.5 border border-[#30363d]"
+                        >
+                          <span>View Analysis</span>
+                          <span className="material-symbols-outlined text-[13px]">arrow_forward</span>
+                        </Link>
+                        <a
+                          href={`https://github.com/${row.repo_full_name}/pull/${row.pr_number}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="p-1.5 rounded-md text-[#8b949e] hover:text-[#f0f6fc] hover:bg-[#21262d] transition-colors"
+                          title="Open in GitHub"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">open_in_new</span>
+                        </a>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={10} className="py-16 text-center">
+                    <div className="flex flex-col items-center justify-center max-w-md mx-auto text-center">
+                      <div className="w-12 h-12 rounded-full bg-[#21262d] border border-[#30363d] flex items-center justify-center text-[#8b949e] mb-3">
+                        <span className="material-symbols-outlined text-[24px]">inbox</span>
+                      </div>
+                      <h3 className="text-sm font-semibold text-[#f0f6fc]">No pull request reviews found</h3>
+                      <p className="text-xs text-[#8b949e] mt-1 font-mono">
+                        {searchQuery || repoFilter !== "all" || verdictFilter !== "all" || authorFilter !== "all"
+                          ? "No reviews match your current filters. Try resetting search filters."
+                          : "Install the GitHub App or submit a PR to start automated multi-agent security and architectural reviews."}
+                      </p>
+                      {publicConfig?.github_app_slug && (
+                        <a
+                          href={`https://github.com/apps/${publicConfig.github_app_slug}/installations/new`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-4 px-3.5 py-1.5 rounded-md bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-medium inline-flex items-center gap-1.5 transition-colors"
+                        >
+                          <span className="material-symbols-outlined text-[15px]">add</span>
+                          Install GitHub App
+                        </a>
+                      )}
                     </div>
                   </td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
         </div>

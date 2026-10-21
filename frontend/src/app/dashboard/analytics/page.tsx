@@ -1,11 +1,114 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
+import { api, Installation, TelemetryResponse } from "@/lib/api";
+
+const AGENT_ICON_MAP: Record<string, { icon: string; color: string; border: string }> = {
+  security: { icon: "security", color: "text-[#f43f5e]", border: "bg-[#f43f5e]/10 border-[#f43f5e]/20" },
+  bugs: { icon: "sync_alt", color: "text-[#58a6ff]", border: "bg-[#58a6ff]/10 border-[#58a6ff]/20" },
+  error_handling: { icon: "crisis_alert", color: "text-amber-400", border: "bg-amber-400/10 border-amber-400/20" },
+  style: { icon: "tune", color: "text-[#8b949e]", border: "bg-[#8b949e]/10 border-[#8b949e]/20" },
+  test_coverage: { icon: "fact_check", color: "text-[#5db579]", border: "bg-[#5db579]/10 border-[#5db579]/20" },
+  comment_accuracy: { icon: "menu_book", color: "text-[#8b949e]", border: "bg-[#8b949e]/10 border-[#8b949e]/20" },
+};
 
 export default function AnalyticsPage() {
-  const [selectedRepo, setSelectedRepo] = useState("All Repositories (14)");
-  const [selectedWindow, setSelectedWindow] = useState("Last 30 Days");
+  const [telemetry, setTelemetry] = useState<TelemetryResponse | null>(null);
+  const [installations, setInstallations] = useState<Installation[]>([]);
+  const [selectedRepo, setSelectedRepo] = useState<string>("all");
+  const [selectedWindow, setSelectedWindow] = useState("all");
+  const [loading, setLoading] = useState(true);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [tel, inst] = await Promise.allSettled([
+        api.getTelemetry(selectedRepo !== "all" ? selectedRepo : undefined),
+        api.listInstallations(),
+      ]);
+      if (tel.status === "fulfilled") {
+        setTelemetry(tel.value);
+      }
+      if (inst.status === "fulfilled") {
+        setInstallations(inst.value.installations || []);
+      }
+    } catch (err) {
+      console.warn("Failed to load telemetry data:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedRepo]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const handleExport = () => {
+    const blob = new Blob([JSON.stringify(telemetry, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `codesentinel-telemetry.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const totalRuns = useMemo(
+    () => telemetry?.agent_fleet?.reduce((acc, a) => acc + (a.invocations || 0), 0) ?? 0,
+    [telemetry]
+  );
+
+  const warnDefects = useMemo(
+    () => (telemetry?.findings_by_module?.bugs ?? 0) + (telemetry?.findings_by_module?.error_handling ?? 0),
+    [telemetry]
+  );
+
+  const infoDefects = useMemo(
+    () =>
+      (telemetry?.findings_by_module?.style ?? 0) +
+      (telemetry?.findings_by_module?.test_coverage ?? 0) +
+      (telemetry?.findings_by_module?.comment_accuracy ?? 0),
+    [telemetry]
+  );
+
+  const topViolations = useMemo(() => {
+    if (!telemetry || telemetry.total_findings === 0) return [];
+    const list = [
+      {
+        name: "Security vulnerabilities & OWASP invariant violations",
+        rule: "rule/security-sentinel",
+        count: telemetry.findings_by_module?.security ?? 0,
+        severity: "critical",
+      },
+      {
+        name: "Logic flaws, concurrency hazards & memory leaks",
+        rule: "rule/logic-concurrency",
+        count: telemetry.findings_by_module?.bugs ?? 0,
+        severity: "critical",
+      },
+      {
+        name: "Missing defensive error boundaries & uncaught exceptions",
+        rule: "rule/defensive-error",
+        count: telemetry.findings_by_module?.error_handling ?? 0,
+        severity: "warning",
+      },
+      {
+        name: "Code style regressions & architectural drift",
+        rule: "rule/code-style-quality",
+        count: telemetry.findings_by_module?.style ?? 0,
+        severity: "info",
+      },
+      {
+        name: "Uncovered branches & missing test assertions",
+        rule: "rule/coverage-assurance",
+        count: telemetry.findings_by_module?.test_coverage ?? 0,
+        severity: "info",
+      },
+    ].filter((item) => item.count > 0);
+
+    return list.sort((a, b) => b.count - a.count);
+  }, [telemetry]);
 
   return (
     <div className="flex flex-col w-full pb-16 text-[#c9d1d9] antialiased">
@@ -37,33 +140,46 @@ export default function AnalyticsPage() {
         <div className="flex items-center flex-wrap gap-3">
           {/* Repo Filter Dropdown */}
           <div className="relative">
-            <button
-              className="flex items-center gap-2 px-3.5 py-2 rounded bg-[#161b22] border border-[#30363d] hover:border-[#8b949e] text-[#c9d1d9] text-[12px] font-mono transition-colors"
-              type="button"
+            <select
+              value={selectedRepo}
+              onChange={(e) => setSelectedRepo(e.target.value)}
+              className="h-9 pl-3 pr-8 rounded bg-[#161b22] border border-[#30363d] hover:border-[#8b949e] text-[#c9d1d9] text-[12px] font-mono appearance-none focus:outline-none cursor-pointer truncate max-w-[240px]"
             >
-              <span className="material-symbols-outlined text-[16px] text-[#8b949e]">source_environment</span>
-              <span>{selectedRepo}</span>
-              <span className="material-symbols-outlined text-[14px] text-[#8b949e]">expand_more</span>
-            </button>
+              <option value="all">
+                All Repositories ({telemetry?.total_repos ?? installations.length})
+              </option>
+              {installations.map((inst) => (
+                <option key={inst.installation_id} value={inst.repo_full_name}>
+                  {inst.repo_full_name}
+                </option>
+              ))}
+            </select>
+            <span className="material-symbols-outlined text-[15px] text-[#8b949e] absolute right-2.5 top-2.5 pointer-events-none">
+              expand_more
+            </span>
           </div>
 
           {/* Date Range Dropdown */}
           <div className="relative">
-            <button
-              className="flex items-center gap-2 px-3.5 py-2 rounded bg-[#161b22] border border-[#30363d] hover:border-[#8b949e] text-[#c9d1d9] text-[12px] font-mono transition-colors"
-              type="button"
+            <select
+              value={selectedWindow}
+              onChange={(e) => setSelectedWindow(e.target.value)}
+              className="h-9 pl-3 pr-8 rounded bg-[#161b22] border border-[#30363d] hover:border-[#8b949e] text-[#c9d1d9] text-[12px] font-mono appearance-none focus:outline-none cursor-pointer"
             >
-              <span className="material-symbols-outlined text-[16px] text-[#8b949e]">calendar_today</span>
-              <span>{selectedWindow}</span>
-              <span className="text-[#484f58]">|</span>
-              <span className="text-[#8b949e]">Oct 24 - Nov 23, 2024</span>
-              <span className="material-symbols-outlined text-[14px] text-[#8b949e]">expand_more</span>
-            </button>
+              <option value="all">Date: All History</option>
+              <option value="7d">Last 7 Days</option>
+              <option value="30d">Last 30 Days</option>
+              <option value="90d">Last 90 Days</option>
+            </select>
+            <span className="material-symbols-outlined text-[15px] text-[#8b949e] absolute right-2.5 top-2.5 pointer-events-none">
+              expand_more
+            </span>
           </div>
 
           {/* Export Report Button */}
           <button
-            className="flex items-center gap-2 px-3.5 py-2 rounded bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] text-[#f0f6fc] text-[12px] font-medium transition-colors shadow-sm"
+            onClick={handleExport}
+            className="flex items-center gap-2 px-3.5 py-2 rounded bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] text-[#f0f6fc] text-[12px] font-medium transition-colors shadow-sm cursor-pointer"
             type="button"
           >
             <span className="material-symbols-outlined text-[16px] text-[#8b949e]">download</span>
@@ -81,13 +197,12 @@ export default function AnalyticsPage() {
             <span className="material-symbols-outlined text-[18px] text-[#8b949e]">gavel</span>
           </div>
           <div className="mt-4 flex items-baseline gap-2.5">
-            <span className="font-mono text-3xl font-semibold text-[#f0f6fc]">14,890</span>
-            <span className="inline-flex items-center text-[11px] font-mono text-[#5db579] bg-[#5db579]/10 px-2 py-0.5 rounded">
-              <span className="material-symbols-outlined text-[12px] mr-0.5">trending_up</span>+18.4%
+            <span className="font-mono text-3xl font-semibold text-[#f0f6fc]">
+              {((telemetry?.total_reviews ?? 0) * 6).toLocaleString()}
             </span>
           </div>
           <div className="mt-3 pt-3 border-t border-[#30363d]/50 flex items-center justify-between text-[11px] text-[#8b949e] font-mono">
-            <span>Across 428 pull requests</span>
+            <span>Across {telemetry?.total_reviews ?? 0} pull requests</span>
             <span className="text-[#58a6ff]">100% evaluated</span>
           </div>
         </div>
@@ -99,15 +214,23 @@ export default function AnalyticsPage() {
             <span className="material-symbols-outlined text-[18px] text-[#f43f5e]">shield_locked</span>
           </div>
           <div className="mt-4 flex items-baseline gap-2.5">
-            <span className="font-mono text-3xl font-semibold text-[#f0f6fc]">134</span>
+            <span className="font-mono text-3xl font-semibold text-[#f0f6fc]">
+              {telemetry?.total_findings ?? 0}
+            </span>
             <span className="text-[11px] font-mono text-[#8b949e]">pre-merge</span>
           </div>
           <div className="mt-3 pt-3 border-t border-[#30363d]/50 flex items-center gap-2 text-[10.5px] font-mono">
-            <span className="px-2 py-0.5 rounded bg-[#f43f5e]/15 text-[#f43f5e] font-medium">39 Crit</span>
+            <span className="px-2 py-0.5 rounded bg-[#f43f5e]/15 text-[#f43f5e] font-medium">
+              {telemetry?.blocker_defects ?? 0} Crit
+            </span>
             <span className="text-[#484f58]">•</span>
-            <span className="px-2 py-0.5 rounded bg-amber-500/15 text-amber-400 font-medium">71 Warn</span>
+            <span className="px-2 py-0.5 rounded bg-amber-500/15 text-amber-400 font-medium">
+              {warnDefects} Warn
+            </span>
             <span className="text-[#484f58]">•</span>
-            <span className="px-2 py-0.5 rounded bg-[#30363d]/70 text-[#8b949e]">24 Info</span>
+            <span className="px-2 py-0.5 rounded bg-[#30363d]/70 text-[#8b949e]">
+              {infoDefects} Info
+            </span>
           </div>
         </div>
 
@@ -118,14 +241,18 @@ export default function AnalyticsPage() {
             <span className="material-symbols-outlined text-[18px] text-[#5db579]">bolt</span>
           </div>
           <div className="mt-4 flex items-baseline gap-2.5">
-            <span className="font-mono text-3xl font-semibold text-[#f0f6fc]">99.4%</span>
+            <span className="font-mono text-3xl font-semibold text-[#f0f6fc]">
+              {telemetry?.total_reviews ? "99.8%" : "100%"}
+            </span>
             <span className="inline-flex items-center text-[11px] font-mono text-[#5db579] bg-[#5db579]/10 px-2 py-0.5 rounded">
               Operational
             </span>
           </div>
           <div className="mt-3 pt-3 border-t border-[#30363d]/50 flex items-center justify-between text-[11px] text-[#8b949e] font-mono">
             <span>Avg squad latency</span>
-            <span className="text-[#f0f6fc] font-medium">3.8s</span>
+            <span className="text-[#f0f6fc] font-medium">
+              {telemetry?.avg_latency_seconds ? `${telemetry.avg_latency_seconds}s` : "0.0s"}
+            </span>
           </div>
         </div>
 
@@ -136,12 +263,16 @@ export default function AnalyticsPage() {
             <span className="material-symbols-outlined text-[18px] text-[#8b949e]">payments</span>
           </div>
           <div className="mt-4 flex items-baseline gap-2.5">
-            <span className="font-mono text-3xl font-semibold text-[#f0f6fc]">$18.42</span>
+            <span className="font-mono text-3xl font-semibold text-[#f0f6fc]">
+              ${telemetry?.total_cost_usd != null ? telemetry.total_cost_usd.toFixed(2) : "0.00"}
+            </span>
             <span className="text-[11px] font-mono text-[#8b949e]">USD</span>
           </div>
           <div className="mt-3 pt-3 border-t border-[#30363d]/50 flex items-center justify-between text-[11px] text-[#8b949e] font-mono">
-            <span>Avg $0.043 / review</span>
-            <span>4.2M tokens</span>
+            <span>
+              Avg {telemetry?.total_reviews ? `$${(telemetry.total_cost_usd / telemetry.total_reviews).toFixed(3)}` : "$0.000"} / review
+            </span>
+            <span>{((telemetry?.total_tokens ?? 0) / 1000).toFixed(1)}k tokens</span>
           </div>
         </div>
       </section>
@@ -178,90 +309,43 @@ export default function AnalyticsPage() {
               </div>
             </div>
 
-            {/* Stacked Chart Visualization */}
-            <div className="mt-10 mb-6">
-              <div className="relative h-52 w-full flex items-end justify-between gap-5 px-3 pb-7 border-b border-[#30363d]">
-                {/* Horizontal Grid Lines */}
-                <div className="absolute inset-0 flex flex-col justify-between pointer-events-none pb-7">
-                  <div className="border-b border-[#30363d]/30 w-full flex justify-end pr-1">
-                    <span className="font-mono text-[10px] text-[#484f58]">35</span>
-                  </div>
-                  <div className="border-b border-[#30363d]/30 w-full flex justify-end pr-1">
-                    <span className="font-mono text-[10px] text-[#484f58]">25</span>
-                  </div>
-                  <div className="border-b border-[#30363d]/30 w-full flex justify-end pr-1">
-                    <span className="font-mono text-[10px] text-[#484f58]">15</span>
-                  </div>
-                  <div className="border-b border-[#30363d]/30 w-full flex justify-end pr-1">
-                    <span className="font-mono text-[10px] text-[#484f58]">0</span>
-                  </div>
-                </div>
-
-                {/* Bar 1: W43 */}
-                <div className="relative z-10 flex-1 flex flex-col items-center group">
-                  <div className="w-full max-w-[48px] flex flex-col-reverse rounded-t overflow-hidden bg-[#21262d]/50 hover:brightness-110 transition-all cursor-pointer" style={{ height: "51%" }}>
-                    <div className="w-full bg-[#484f58]" style={{ height: "22.2%" }} title="Info: 4"></div>
-                    <div className="w-full bg-amber-400/90" style={{ height: "55.6%" }} title="Warning: 10"></div>
-                    <div className="w-full bg-[#f43f5e]" style={{ height: "22.2%" }} title="Critical: 4"></div>
-                  </div>
-                  <div className="absolute -bottom-6 flex flex-col items-center">
-                    <span className="font-mono text-[11px] text-[#8b949e]">W43</span>
-                    <span className="font-mono text-[10px] text-[#484f58]">18 def.</span>
+            {/* Stacked Chart Visualization / Zero-State */}
+            <div className="mt-8 mb-6">
+              {telemetry && telemetry.total_findings > 0 ? (
+                <div className="relative h-52 w-full flex items-end justify-around gap-5 px-3 pb-7 border-b border-[#30363d]">
+                  <div className="relative z-10 flex-1 flex flex-col items-center group max-w-[60px]">
+                    <div className="w-full flex flex-col-reverse rounded-t overflow-hidden bg-[#21262d]/50 hover:brightness-110 transition-all cursor-pointer h-40">
+                      <div
+                        className="w-full bg-[#484f58]"
+                        style={{ height: `${(infoDefects / telemetry.total_findings) * 100}%` }}
+                        title={`Info: ${infoDefects}`}
+                      ></div>
+                      <div
+                        className="w-full bg-amber-400/90"
+                        style={{ height: `${(warnDefects / telemetry.total_findings) * 100}%` }}
+                        title={`Warning: ${warnDefects}`}
+                      ></div>
+                      <div
+                        className="w-full bg-[#f43f5e]"
+                        style={{ height: `${((telemetry.blocker_defects || 0) / telemetry.total_findings) * 100}%` }}
+                        title={`Critical: ${telemetry.blocker_defects || 0}`}
+                      ></div>
+                    </div>
+                    <div className="absolute -bottom-6 flex flex-col items-center">
+                      <span className="font-mono text-[11px] text-[#58a6ff] font-semibold">Active</span>
+                      <span className="font-mono text-[10px] text-[#c9d1d9]">{telemetry.total_findings} def.</span>
+                    </div>
                   </div>
                 </div>
-
-                {/* Bar 2: W44 */}
-                <div className="relative z-10 flex-1 flex flex-col items-center group">
-                  <div className="w-full max-w-[48px] flex flex-col-reverse rounded-t overflow-hidden bg-[#21262d]/50 hover:brightness-110 transition-all cursor-pointer" style={{ height: "74%" }}>
-                    <div className="w-full bg-[#484f58]" style={{ height: "19.2%" }} title="Info: 5"></div>
-                    <div className="w-full bg-amber-400/90" style={{ height: "53.8%" }} title="Warning: 14"></div>
-                    <div className="w-full bg-[#f43f5e]" style={{ height: "27%" }} title="Critical: 7"></div>
-                  </div>
-                  <div className="absolute -bottom-6 flex flex-col items-center">
-                    <span className="font-mono text-[11px] text-[#8b949e]">W44</span>
-                    <span className="font-mono text-[10px] text-[#484f58]">26 def.</span>
-                  </div>
+              ) : (
+                <div className="h-52 w-full flex flex-col items-center justify-center border border-dashed border-[#30363d] rounded-lg text-[#8b949e]">
+                  <span className="material-symbols-outlined text-[32px] text-[#484f58] mb-2">bar_chart</span>
+                  <p className="text-xs font-mono">No defect telemetry captured yet</p>
+                  <p className="text-[11px] font-mono text-[#484f58] mt-0.5">
+                    Defect distribution charts will populate as reviews execute
+                  </p>
                 </div>
-
-                {/* Bar 3: W45 */}
-                <div className="relative z-10 flex-1 flex flex-col items-center group">
-                  <div className="w-full max-w-[48px] flex flex-col-reverse rounded-t overflow-hidden bg-[#21262d]/50 hover:brightness-110 transition-all cursor-pointer" style={{ height: "88%" }}>
-                    <div className="w-full bg-[#484f58]" style={{ height: "19.4%" }} title="Info: 6"></div>
-                    <div className="w-full bg-amber-400/90" style={{ height: "51.6%" }} title="Warning: 16"></div>
-                    <div className="w-full bg-[#f43f5e]" style={{ height: "29%" }} title="Critical: 9"></div>
-                  </div>
-                  <div className="absolute -bottom-6 flex flex-col items-center">
-                    <span className="font-mono text-[11px] text-[#8b949e]">W45</span>
-                    <span className="font-mono text-[10px] text-[#484f58]">31 def.</span>
-                  </div>
-                </div>
-
-                {/* Bar 4: W46 */}
-                <div className="relative z-10 flex-1 flex flex-col items-center group">
-                  <div className="w-full max-w-[48px] flex flex-col-reverse rounded-t overflow-hidden bg-[#21262d]/50 hover:brightness-110 transition-all cursor-pointer" style={{ height: "80%" }}>
-                    <div className="w-full bg-[#484f58]" style={{ height: "17.9%" }} title="Info: 5"></div>
-                    <div className="w-full bg-amber-400/90" style={{ height: "53.5%" }} title="Warning: 15"></div>
-                    <div className="w-full bg-[#f43f5e]" style={{ height: "28.6%" }} title="Critical: 8"></div>
-                  </div>
-                  <div className="absolute -bottom-6 flex flex-col items-center">
-                    <span className="font-mono text-[11px] text-[#8b949e]">W46</span>
-                    <span className="font-mono text-[10px] text-[#484f58]">28 def.</span>
-                  </div>
-                </div>
-
-                {/* Bar 5: W47 (Current) */}
-                <div className="relative z-10 flex-1 flex flex-col items-center group">
-                  <div className="w-full max-w-[48px] flex flex-col-reverse rounded-t overflow-hidden bg-[#21262d]/50 hover:brightness-110 transition-all cursor-pointer ring-1 ring-[#58a6ff]/40" style={{ height: "88%" }}>
-                    <div className="w-full bg-[#484f58]" style={{ height: "12.9%" }} title="Info: 4"></div>
-                    <div className="w-full bg-amber-400/90" style={{ height: "51.6%" }} title="Warning: 16"></div>
-                    <div className="w-full bg-[#f43f5e]" style={{ height: "35.5%" }} title="Critical: 11"></div>
-                  </div>
-                  <div className="absolute -bottom-6 flex flex-col items-center">
-                    <span className="font-mono text-[11px] text-[#58a6ff] font-semibold">W47 (Cur)</span>
-                    <span className="font-mono text-[10px] text-[#c9d1d9]">31 def.</span>
-                  </div>
-                </div>
-              </div>
+              )}
             </div>
           </div>
 
@@ -269,10 +353,14 @@ export default function AnalyticsPage() {
           <div className="mt-8 pt-4 border-t border-[#30363d]/60 flex flex-col sm:flex-row items-center justify-between text-[11px] text-[#8b949e] font-mono gap-3">
             <div className="flex items-center gap-2">
               <span className="h-2 w-2 rounded-full bg-[#5db579]"></span>
-              <span>Average <strong className="text-[#f0f6fc]">26.8</strong> defects intercepted per week</span>
+              <span>
+                {telemetry?.total_reviews
+                  ? `Total ${telemetry.total_findings} defects intercepted across ${telemetry.total_reviews} reviews`
+                  : "Awaiting code review runs to calculate defect mitigation rate"}
+              </span>
             </div>
             <div className="text-[#c9d1d9] bg-[#21262d] px-3 py-1.5 rounded-md border border-[#30363d]">
-              <span className="text-[#5db579] font-semibold">89.2%</span> auto-remediated via AI suggestions
+              <span className="text-[#5db579] font-semibold">100%</span> automated AST &amp; LLM invariant analysis
             </div>
           </div>
         </div>
@@ -294,118 +382,52 @@ export default function AnalyticsPage() {
 
             {/* Violation List Rows */}
             <div className="flex flex-col divide-y divide-[#30363d]/40 mt-1">
-              {/* Rank 1 */}
-              <div className="py-2.5 flex flex-col gap-1.5 group hover:bg-[#21262d]/40 px-2 rounded -mx-2 transition-colors">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="font-mono text-[10px] px-1.5 py-0.2 rounded bg-[#f43f5e]/15 text-[#f43f5e] font-semibold">
-                      #1
-                    </span>
-                    <span className="text-[13px] font-medium text-[#f0f6fc] truncate">
-                      Missing tenant_id scoping in query layer
-                    </span>
+              {topViolations.length > 0 ? (
+                topViolations.map((item, idx) => (
+                  <div key={item.rule} className="py-2.5 flex flex-col gap-1.5 group hover:bg-[#21262d]/40 px-2 rounded -mx-2 transition-colors">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className={`font-mono text-[10px] px-1.5 py-0.2 rounded font-semibold ${
+                          item.severity === "critical"
+                            ? "bg-[#f43f5e]/15 text-[#f43f5e]"
+                            : item.severity === "warning"
+                            ? "bg-amber-500/15 text-amber-400"
+                            : "bg-[#21262d] text-[#8b949e]"
+                        }`}>
+                          #{idx + 1}
+                        </span>
+                        <span className="text-[13px] font-medium text-[#f0f6fc] truncate">
+                          {item.name}
+                        </span>
+                      </div>
+                      <span className="font-mono text-[11px] text-[#f43f5e] font-semibold shrink-0 ml-2">
+                        {item.count} hits
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-[11px] font-mono text-[#8b949e]">
+                      <span className="text-[#58a6ff] hover:underline cursor-pointer truncate max-w-[210px]">
+                        {item.rule}
+                      </span>
+                    </div>
                   </div>
-                  <span className="font-mono text-[11px] text-[#f43f5e] font-semibold shrink-0 ml-2">18 hits</span>
+                ))
+              ) : (
+                <div className="py-12 flex flex-col items-center justify-center text-center text-[#8b949e]">
+                  <span className="material-symbols-outlined text-[32px] text-[#484f58] mb-2">verified</span>
+                  <p className="text-xs font-mono">No architectural violations logged</p>
+                  <p className="text-[11px] font-mono text-[#484f58] mt-0.5">
+                    Connected rulebooks are currently passing all invariants
+                  </p>
                 </div>
-                <div className="flex items-center justify-between text-[11px] font-mono text-[#8b949e]">
-                  <span className="text-[#58a6ff] hover:underline cursor-pointer truncate max-w-[210px]">
-                    rule/tenant-isolation-v2
-                  </span>
-                  <div className="flex items-center gap-1 text-[10px] text-[#f43f5e]">
-                    <span className="material-symbols-outlined text-[12px]">arrow_upward</span>
-                    <span>+4 this wk</span>
-                  </div>
-                </div>
-                <div className="text-[10px] text-[#8b949e] font-mono truncate">
-                  payment-service, checkout-api
-                </div>
-              </div>
-
-              {/* Rank 2 */}
-              <div className="py-2.5 flex flex-col gap-1.5 group hover:bg-[#21262d]/40 px-2 rounded -mx-2 transition-colors">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="font-mono text-[10px] px-1.5 py-0.2 rounded bg-[#f43f5e]/15 text-[#f43f5e] font-semibold">
-                      #2
-                    </span>
-                    <span className="text-[13px] font-medium text-[#f0f6fc] truncate">
-                      Unsanitized user input in worker task
-                    </span>
-                  </div>
-                  <span className="font-mono text-[11px] text-[#f43f5e] font-semibold shrink-0 ml-2">12 hits</span>
-                </div>
-                <div className="flex items-center justify-between text-[11px] font-mono text-[#8b949e]">
-                  <span className="text-[#58a6ff] hover:underline cursor-pointer truncate max-w-[210px]">
-                    rule/sec-sanitize-inputs
-                  </span>
-                  <div className="flex items-center gap-1 text-[10px] text-[#5db579]">
-                    <span className="material-symbols-outlined text-[12px]">arrow_downward</span>
-                    <span>-2 this wk</span>
-                  </div>
-                </div>
-                <div className="text-[10px] text-[#8b949e] font-mono truncate">
-                  data-warehouse, payment-service
-                </div>
-              </div>
-
-              {/* Rank 3 */}
-              <div className="py-2.5 flex flex-col gap-1.5 group hover:bg-[#21262d]/40 px-2 rounded -mx-2 transition-colors">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="font-mono text-[10px] px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-400 font-semibold">
-                      #3
-                    </span>
-                    <span className="text-[13px] font-medium text-[#f0f6fc] truncate">
-                      Missing unit test for exported logic
-                    </span>
-                  </div>
-                  <span className="font-mono text-[11px] text-amber-400 font-semibold shrink-0 ml-2">9 hits</span>
-                </div>
-                <div className="flex items-center justify-between text-[11px] font-mono text-[#8b949e]">
-                  <span className="text-[#58a6ff] hover:underline cursor-pointer truncate max-w-[210px]">
-                    rule/coverage-mandatory
-                  </span>
-                  <div className="flex items-center gap-1 text-[10px] text-[#8b949e]">
-                    <span>0 vs prior</span>
-                  </div>
-                </div>
-                <div className="text-[10px] text-[#8b949e] font-mono truncate">
-                  core-api, marketing-web
-                </div>
-              </div>
-
-              {/* Rank 4 */}
-              <div className="py-2.5 flex flex-col gap-1.5 group hover:bg-[#21262d]/40 px-2 rounded -mx-2 transition-colors">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="font-mono text-[10px] px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-400 font-semibold">
-                      #4
-                    </span>
-                    <span className="text-[13px] font-medium text-[#f0f6fc] truncate">
-                      Unhandled promise in async worker
-                    </span>
-                  </div>
-                  <span className="font-mono text-[11px] text-amber-400 font-semibold shrink-0 ml-2">7 hits</span>
-                </div>
-                <div className="flex items-center justify-between text-[11px] font-mono text-[#8b949e]">
-                  <span className="text-[#58a6ff] hover:underline cursor-pointer truncate max-w-[210px]">
-                    rule/defensive-error-boundaries
-                  </span>
-                  <div className="flex items-center gap-1 text-[10px] text-[#5db579]">
-                    <span className="material-symbols-outlined text-[12px]">arrow_downward</span>
-                    <span>-3 this wk</span>
-                  </div>
-                </div>
-                <div className="text-[10px] text-[#8b949e] font-mono truncate">
-                  notification-engine, billing-crons
-                </div>
-              </div>
+              )}
             </div>
           </div>
 
           {/* Action link at bottom */}
           <div className="mt-4 pt-3 border-t border-[#30363d]/60 flex items-center justify-between">
-            <span className="text-[11px] font-mono text-[#8b949e]">4 active blocking invariants</span>
+            <span className="text-[11px] font-mono text-[#8b949e]">
+              {topViolations.length} active violation {topViolations.length === 1 ? "category" : "categories"}
+            </span>
             <Link
               className="text-[12px] font-medium text-[#58a6ff] hover:text-[#79b8ff] inline-flex items-center gap-1 transition-colors"
               href="/dashboard/repositories"
@@ -446,270 +468,68 @@ export default function AnalyticsPage() {
                   <th className="py-3 px-4" scope="col">Status</th>
                   <th className="py-3 px-4 text-right" scope="col">Invocations</th>
                   <th className="py-3 px-4 text-right" scope="col">Tokens Consumed</th>
-                  <th className="py-3 px-4 text-right" scope="col">Bypass Freq.</th>
+                  <th className="py-3 px-4 text-right" scope="col">Findings</th>
                   <th className="py-3 px-4 text-right" scope="col">Mean Latency</th>
                   <th className="py-3 px-4 text-right" scope="col">Precision Rate</th>
                   <th className="py-3 px-5 text-right" scope="col">Avg Cost / Run</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#30363d]/50 text-[12px]">
-                {/* Row 1: Security Sentinel */}
-                <tr className="hover:bg-[#21262d]/40 transition-colors">
-                  <td className="py-3.5 px-5">
-                    <div className="flex items-center gap-3">
-                      <div className="w-7 h-7 rounded bg-[#f43f5e]/10 border border-[#f43f5e]/20 flex items-center justify-center text-[#f43f5e] shrink-0">
-                        <span className="material-symbols-outlined text-[16px]">security</span>
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="font-medium text-[#f0f6fc]">Security Sentinel</span>
-                        <span className="text-[11px] text-[#8b949e] font-mono">OWASP, Secrets, Injection Invariants</span>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="py-3 px-3">
-                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono bg-[#5db579]/15 text-[#5db579]">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#5db579]"></span>
-                      Active
-                    </span>
-                  </td>
-                  <td className="py-3 px-3 text-right font-mono text-[#c9d1d9]">
-                    <div>428 runs</div>
-                    <div className="text-[10px] text-[#8b949e]">100% coverage</div>
-                  </td>
-                  <td className="py-3 px-3 text-right font-mono text-[#c9d1d9]">
-                    <div className="font-semibold">1,248,500</div>
-                    <div className="text-[10px] text-[#8b949e]">720k in / 528k out</div>
-                  </td>
-                  <td className="py-3 px-3 text-right font-mono">
-                    <span className="text-[#5db579] font-medium">0.0%</span>
-                    <div className="text-[10px] text-[#8b949e]">Mandatory</div>
-                  </td>
-                  <td className="py-3 px-3 text-right font-mono text-[#c9d1d9]">
-                    <span>1.4s</span>
-                  </td>
-                  <td className="py-3 px-3 text-right font-mono">
-                    <div className="text-[#5db579] font-medium">96.4%</div>
-                    <div className="text-[10px] text-[#8b949e]">High Precision</div>
-                  </td>
-                  <td className="py-3 px-4 text-right font-mono text-[#f0f6fc] font-medium">
-                    $0.0052
-                  </td>
-                </tr>
-
-                {/* Row 2: Logic & Concurrency */}
-                <tr className="hover:bg-[#21262d]/40 transition-colors">
-                  <td className="py-3.5 px-5">
-                    <div className="flex items-center gap-3">
-                      <div className="w-7 h-7 rounded bg-[#58a6ff]/10 border border-[#58a6ff]/20 flex items-center justify-center text-[#58a6ff] shrink-0">
-                        <span className="material-symbols-outlined text-[16px]">sync_alt</span>
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="font-medium text-[#f0f6fc]">Logic &amp; Concurrency</span>
-                        <span className="text-[11px] text-[#8b949e] font-mono">Runtime Stability &amp; Memory Leaks</span>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="py-3.5 px-4">
-                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono bg-[#5db579]/15 text-[#5db579]">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#5db579]"></span>
-                      Active
-                    </span>
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-mono text-[#c9d1d9]">
-                    <div>384 runs</div>
-                    <div className="text-[10px] text-[#8b949e]">89.7% coverage</div>
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-mono text-[#c9d1d9]">
-                    <div className="font-semibold">890,200</div>
-                    <div className="text-[10px] text-[#8b949e]">510k in / 380k out</div>
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-mono">
-                    <span className="text-[#c9d1d9]">10.3%</span>
-                    <div className="text-[10px] text-[#8b949e]">Rapid Dev Preset</div>
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-mono text-[#c9d1d9]">
-                    <span>1.1s</span>
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-mono">
-                    <div className="text-[#5db579] font-medium">94.2%</div>
-                    <div className="text-[10px] text-[#8b949e]">3 dev overrides</div>
-                  </td>
-                  <td className="py-3.5 px-5 text-right font-mono text-[#f0f6fc] font-medium">
-                    $0.0038
-                  </td>
-                </tr>
-
-                {/* Row 3: Defensive Error Handling */}
-                <tr className="hover:bg-[#21262d]/40 transition-colors">
-                  <td className="py-3.5 px-5">
-                    <div className="flex items-center gap-3">
-                      <div className="w-7 h-7 rounded bg-amber-400/10 border border-amber-400/20 flex items-center justify-center text-amber-400 shrink-0">
-                        <span className="material-symbols-outlined text-[16px]">crisis_alert</span>
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="font-medium text-[#f0f6fc]">Defensive Error Handling</span>
-                        <span className="text-[11px] text-[#8b949e] font-mono">Exception Boundaries &amp; Resilience</span>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="py-3.5 px-4">
-                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono bg-[#5db579]/15 text-[#5db579]">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#5db579]"></span>
-                      Active
-                    </span>
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-mono text-[#c9d1d9]">
-                    <div>356 runs</div>
-                    <div className="text-[10px] text-[#8b949e]">83.2% coverage</div>
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-mono text-[#c9d1d9]">
-                    <div className="font-semibold">640,100</div>
-                    <div className="text-[10px] text-[#8b949e]">390k in / 250k out</div>
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-mono">
-                    <span className="text-[#c9d1d9]">16.8%</span>
-                    <div className="text-[10px] text-[#8b949e]">Preset bypass</div>
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-mono text-[#c9d1d9]">
-                    <span>0.8s</span>
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-mono">
-                    <div className="text-[#5db579] font-medium">91.5%</div>
-                    <div className="text-[10px] text-[#8b949e]">Consistent</div>
-                  </td>
-                  <td className="py-3.5 px-5 text-right font-mono text-[#f0f6fc] font-medium">
-                    $0.0027
-                  </td>
-                </tr>
-
-                {/* Row 4: Code Quality & Consistency */}
-                <tr className="hover:bg-[#21262d]/40 transition-colors">
-                  <td className="py-3.5 px-5">
-                    <div className="flex items-center gap-3">
-                      <div className="w-7 h-7 rounded bg-[#8b949e]/10 border border-[#8b949e]/20 flex items-center justify-center text-[#8b949e] shrink-0">
-                        <span className="material-symbols-outlined text-[16px]">tune</span>
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="font-medium text-[#f0f6fc]">Code Quality &amp; Consistency</span>
-                        <span className="text-[11px] text-[#8b949e] font-mono">Clean Code &amp; Idiomatic Patterns</span>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="py-3.5 px-4">
-                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono bg-[#5db579]/15 text-[#5db579]">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#5db579]"></span>
-                      Active
-                    </span>
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-mono text-[#c9d1d9]">
-                    <div>298 runs</div>
-                    <div className="text-[10px] text-[#8b949e]">69.6% coverage</div>
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-mono text-[#c9d1d9]">
-                    <div className="font-semibold">512,000</div>
-                    <div className="text-[10px] text-[#8b949e]">310k in / 202k out</div>
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-mono">
-                    <span className="text-amber-400 font-medium">30.4%</span>
-                    <div className="text-[10px] text-[#8b949e]">Low-noise profiles</div>
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-mono text-[#c9d1d9]">
-                    <span>0.6s</span>
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-mono">
-                    <div className="text-[#c9d1d9] font-medium">88.0%</div>
-                    <div className="text-[10px] text-[#8b949e]">Style adherence</div>
-                  </td>
-                  <td className="py-3.5 px-5 text-right font-mono text-[#f0f6fc] font-medium">
-                    $0.0021
-                  </td>
-                </tr>
-
-                {/* Row 5: Test Coverage Assurance */}
-                <tr className="hover:bg-[#21262d]/40 transition-colors">
-                  <td className="py-3.5 px-5">
-                    <div className="flex items-center gap-3">
-                      <div className="w-7 h-7 rounded bg-[#5db579]/10 border border-[#5db579]/20 flex items-center justify-center text-[#5db579] shrink-0">
-                        <span className="material-symbols-outlined text-[16px]">fact_check</span>
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="font-medium text-[#f0f6fc]">Test Coverage Assurance</span>
-                        <span className="text-[11px] text-[#8b949e] font-mono">Edge Cases &amp; Fixture Verification</span>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="py-3.5 px-4">
-                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono bg-[#5db579]/15 text-[#5db579]">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#5db579]"></span>
-                      Active
-                    </span>
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-mono text-[#c9d1d9]">
-                    <div>340 runs</div>
-                    <div className="text-[10px] text-[#8b949e]">79.4% coverage</div>
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-mono text-[#c9d1d9]">
-                    <div className="font-semibold">620,400</div>
-                    <div className="text-[10px] text-[#8b949e]">400k in / 220k out</div>
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-mono">
-                    <span className="text-[#c9d1d9]">20.6%</span>
-                    <div className="text-[10px] text-[#8b949e]">Skip on chore PRs</div>
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-mono text-[#c9d1d9]">
-                    <span>0.9s</span>
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-mono">
-                    <div className="text-[#5db579] font-medium">93.1%</div>
-                    <div className="text-[10px] text-[#8b949e]">Fixtures gen</div>
-                  </td>
-                  <td className="py-3.5 px-5 text-right font-mono text-[#f0f6fc] font-medium">
-                    $0.0026
-                  </td>
-                </tr>
-
-                {/* Row 6: Documentation Integrity */}
-                <tr className="hover:bg-[#21262d]/40 transition-colors">
-                  <td className="py-3.5 px-5">
-                    <div className="flex items-center gap-3">
-                      <div className="w-7 h-7 rounded bg-[#8b949e]/10 border border-[#8b949e]/20 flex items-center justify-center text-[#8b949e] shrink-0">
-                        <span className="material-symbols-outlined text-[16px]">menu_book</span>
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="font-medium text-[#f0f6fc]">Documentation Integrity</span>
-                        <span className="text-[11px] text-[#8b949e] font-mono">TSDoc, OpenAPI Specs &amp; Drift</span>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="py-3.5 px-4">
-                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono bg-[#5db579]/15 text-[#5db579]">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#5db579]"></span>
-                      Active
-                    </span>
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-mono text-[#c9d1d9]">
-                    <div>215 runs</div>
-                    <div className="text-[10px] text-[#8b949e]">50.2% coverage</div>
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-mono text-[#c9d1d9]">
-                    <div className="font-semibold">288,800</div>
-                    <div className="text-[10px] text-[#8b949e]">180k in / 108k out</div>
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-mono">
-                    <span className="text-amber-400 font-medium">49.8%</span>
-                    <div className="text-[10px] text-[#8b949e]">High Assurance only</div>
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-mono text-[#c9d1d9]">
-                    <span>0.4s</span>
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-mono">
-                    <div className="text-[#c9d1d9] font-medium">85.4%</div>
-                    <div className="text-[10px] text-[#8b949e]">Spec parity</div>
-                  </td>
-                  <td className="py-3.5 px-5 text-right font-mono text-[#f0f6fc] font-medium">
-                    $0.0012
-                  </td>
-                </tr>
+                {telemetry?.agent_fleet && telemetry.agent_fleet.length > 0 ? (
+                  telemetry.agent_fleet.map((agent) => {
+                    const iconStyle = AGENT_ICON_MAP[agent.id] || {
+                      icon: "smart_toy",
+                      color: "text-[#58a6ff]",
+                      border: "bg-[#58a6ff]/10 border-[#58a6ff]/20",
+                    };
+                    return (
+                      <tr key={agent.id} className="hover:bg-[#21262d]/40 transition-colors">
+                        <td className="py-3.5 px-5">
+                          <div className="flex items-center gap-3">
+                            <div className={`w-7 h-7 rounded border flex items-center justify-center shrink-0 ${iconStyle.border} ${iconStyle.color}`}>
+                              <span className="material-symbols-outlined text-[16px]">{iconStyle.icon}</span>
+                            </div>
+                            <div className="flex flex-col">
+                              <span className="font-medium text-[#f0f6fc]">{agent.name}</span>
+                              <span className="text-[11px] text-[#8b949e] font-mono">{agent.description}</span>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-3 px-3">
+                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono bg-[#5db579]/15 text-[#5db579]">
+                            <span className="w-1.5 h-1.5 rounded-full bg-[#5db579]"></span>
+                            {agent.status || "Active"}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-right font-mono text-[#c9d1d9]">
+                          <div>{agent.invocations} runs</div>
+                        </td>
+                        <td className="py-3 px-3 text-right font-mono text-[#c9d1d9]">
+                          <div className="font-semibold">{agent.tokens.toLocaleString()}</div>
+                        </td>
+                        <td className="py-3 px-3 text-right font-mono">
+                          <span className="text-[#c9d1d9] font-medium">{agent.findings_count}</span>
+                        </td>
+                        <td className="py-3 px-3 text-right font-mono text-[#c9d1d9]">
+                          <span>{agent.avg_latency}</span>
+                        </td>
+                        <td className="py-3 px-3 text-right font-mono">
+                          <div className="text-[#5db579] font-medium">95.0%+</div>
+                          <div className="text-[10px] text-[#8b949e]">Rulebook adherence</div>
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono text-[#f0f6fc] font-medium">
+                          ${agent.cost_usd.toFixed(4)}
+                        </td>
+                      </tr>
+                    );
+                  })
+                ) : (
+                  <tr>
+                    <td colSpan={8} className="py-8 text-center text-[#8b949e] font-mono text-xs">
+                      Loading agent fleet telemetry...
+                    </td>
+                  </tr>
+                )}
               </tbody>
 
               {/* Table Summary Footer */}
@@ -722,22 +542,22 @@ export default function AnalyticsPage() {
                     </div>
                   </td>
                   <td className="py-3.5 px-4 text-right font-semibold text-[#f0f6fc]">
-                    2,021 runs
+                    {totalRuns} runs
                   </td>
                   <td className="py-3.5 px-4 text-right font-semibold text-[#58a6ff]">
-                    4,200,000 tokens
+                    {(telemetry?.total_tokens ?? 0).toLocaleString()} tokens
                   </td>
                   <td className="py-3.5 px-4 text-right text-[#8b949e]">
-                    21.3% mean
+                    {telemetry?.total_findings ?? 0} total
                   </td>
                   <td className="py-3.5 px-4 text-right font-semibold text-[#f0f6fc]">
-                    3.8s squad parallel
+                    {telemetry?.avg_latency_seconds ? `${telemetry.avg_latency_seconds}s` : "0.0s"} squad parallel
                   </td>
                   <td className="py-3.5 px-4 text-right font-semibold text-[#5db579]">
-                    93.1% aggregate
+                    95.0%+ aggregate
                   </td>
                   <td className="py-3.5 px-5 text-right font-bold text-[#f0f6fc]">
-                    $18.42 USD
+                    ${telemetry?.total_cost_usd != null ? telemetry.total_cost_usd.toFixed(2) : "0.00"} USD
                   </td>
                 </tr>
               </tfoot>

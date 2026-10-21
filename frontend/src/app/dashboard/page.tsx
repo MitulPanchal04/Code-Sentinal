@@ -2,11 +2,12 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
-import { api, Review, PublicConfig } from "@/lib/api";
+import { api, Review, PublicConfig, TelemetryResponse } from "@/lib/api";
 import { formatDate } from "@/lib/utils";
 
 export default function DashboardPage() {
   const [reviews, setReviews] = useState<Review[]>([]);
+  const [telemetry, setTelemetry] = useState<TelemetryResponse | null>(null);
   const [publicConfig, setPublicConfig] = useState<PublicConfig | null>(null);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -18,9 +19,10 @@ export default function DashboardPage() {
     setLoading(true);
     setError(null);
     try {
-      const [reviewData, configData] = await Promise.allSettled([
+      const [reviewData, configData, telemetryData] = await Promise.allSettled([
         api.listReviews({ limit: 25 }),
         api.getPublicConfig(),
+        api.getTelemetry(),
       ]);
 
       if (reviewData.status === "fulfilled") {
@@ -29,6 +31,9 @@ export default function DashboardPage() {
       }
       if (configData.status === "fulfilled") {
         setPublicConfig(configData.value);
+      }
+      if (telemetryData.status === "fulfilled") {
+        setTelemetry(telemetryData.value);
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -113,7 +118,7 @@ export default function DashboardPage() {
             Engineering Oversight &amp; Review Feed
           </h1>
           <p className="text-xs md:text-sm text-[#8b949e] max-w-2xl font-normal leading-relaxed">
-            Autonomous LangGraph review pipelines operational across 14 connected GitHub installations. Enforcing structural architecture, memory leaks, and concurrency constraints in real time.
+            Autonomous LangGraph review pipelines operational across {telemetry?.total_repos ?? 0} connected GitHub {telemetry?.total_repos === 1 ? "installation" : "installations"}. Enforcing structural architecture, memory leaks, and concurrency constraints in real time.
           </p>
         </div>
 
@@ -155,15 +160,14 @@ export default function DashboardPage() {
           </div>
           <div className="mt-4 flex items-baseline gap-2.5">
             <span className="text-2xl font-bold font-mono tracking-tight text-[#f0f6fc]">
-              {total > 0 ? total : 428}
-            </span>
-            <span className="inline-flex items-center text-[11px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 font-medium">
-              +12.4%
+              {telemetry?.total_reviews ?? total}
             </span>
           </div>
           <div className="mt-3 text-[11px] font-mono text-[#8b949e] flex items-center gap-1.5 border-t border-[#30363d]/40 pt-2.5">
             <span className="w-1.5 h-1.5 rounded-full bg-[#8b949e]" />
-            <span>14 repos synchronized</span>
+            <span>
+              {telemetry?.total_repos ?? 0} {telemetry?.total_repos === 1 ? "repo" : "repos"} synchronized
+            </span>
           </div>
         </div>
 
@@ -177,7 +181,9 @@ export default function DashboardPage() {
           </div>
           <div className="mt-4 flex items-baseline justify-between">
             <div className="flex items-baseline gap-1">
-              <span className="text-2xl font-bold font-mono tracking-tight text-[#f0f6fc]">{avgScore}</span>
+              <span className="text-2xl font-bold font-mono tracking-tight text-[#f0f6fc]">
+                {telemetry?.avg_merge_score ? telemetry.avg_merge_score.toFixed(1) : "0.0"}
+              </span>
               <span className="text-xs font-mono text-[#8b949e]">/ 10</span>
             </div>
             {/* Sparkline indicator */}
@@ -186,7 +192,9 @@ export default function DashboardPage() {
             </svg>
           </div>
           <div className="mt-3 text-[11px] font-mono text-[#8b949e] flex items-center gap-1.5 border-t border-[#30363d]/40 pt-2.5">
-            <span className="text-emerald-400 font-semibold">94.6%</span>
+            <span className="text-emerald-400 font-semibold">
+              {telemetry?.pass_rate_pct != null ? `${telemetry.pass_rate_pct}%` : "0%"}
+            </span>
             <span>first-pass pass rate</span>
           </div>
         </div>
@@ -201,7 +209,7 @@ export default function DashboardPage() {
           </div>
           <div className="mt-4 flex items-baseline gap-2.5">
             <span className="text-2xl font-bold font-mono tracking-tight text-rose-400">
-              {failedCount > 0 ? failedCount : 39}
+              {telemetry?.blocker_defects ?? 0}
             </span>
             <span className="inline-flex items-center text-[10px] font-mono text-rose-400/90 bg-rose-500/10 px-1.5 py-0.5 rounded border border-rose-500/20 uppercase tracking-wider">
               Pre-Merge Block
@@ -222,12 +230,16 @@ export default function DashboardPage() {
             </div>
           </div>
           <div className="mt-4 flex items-baseline gap-1.5">
-            <span className="text-2xl font-bold font-mono tracking-tight text-[#f0f6fc]">$18.42</span>
+            <span className="text-2xl font-bold font-mono tracking-tight text-[#f0f6fc]">
+              ${telemetry?.total_cost_usd != null ? telemetry.total_cost_usd.toFixed(2) : "0.00"}
+            </span>
             <span className="text-xs font-mono text-[#8b949e]">USD</span>
           </div>
           <div className="mt-3 text-[11px] font-mono text-[#8b949e] flex items-center justify-between border-t border-[#30363d]/40 pt-2.5">
-            <span>Eff: 98.4%</span>
-            <span>~$0.043 / review</span>
+            <span>
+              Avg {telemetry?.total_reviews ? `$${(telemetry.total_cost_usd / telemetry.total_reviews).toFixed(3)}` : "$0.000"} / review
+            </span>
+            <span>{((telemetry?.total_tokens ?? 0) / 1000).toFixed(1)}k tokens</span>
           </div>
         </div>
       </section>
@@ -255,83 +267,45 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* High-fidelity SVG Chart */}
-            <div className="w-full mt-4 overflow-x-auto">
-              <svg className="w-full h-56 min-w-[500px]" fill="none" preserveAspectRatio="none" viewBox="0 0 680 200">
-                {/* Gridlines */}
-                <line stroke="#21262d" strokeDasharray="3 3" strokeWidth="1" x1="40" x2="660" y1="20" y2="20" />
-                <line stroke="#21262d" strokeDasharray="3 3" strokeWidth="1" x1="40" x2="660" y1="65" y2="65" />
-                <line stroke="#21262d" strokeDasharray="3 3" strokeWidth="1" x1="40" x2="660" y1="110" y2="110" />
-                <line stroke="#21262d" strokeWidth="1" x1="40" x2="660" y1="155" y2="155" />
+            {/* High-fidelity SVG Chart / Zero State */}
+            {reviews.length > 0 ? (
+              <div className="w-full mt-4 overflow-x-auto">
+                <svg className="w-full h-56 min-w-[500px]" fill="none" preserveAspectRatio="none" viewBox="0 0 680 200">
+                  {/* Gridlines */}
+                  <line stroke="#21262d" strokeDasharray="3 3" strokeWidth="1" x1="40" x2="660" y1="20" y2="20" />
+                  <line stroke="#21262d" strokeDasharray="3 3" strokeWidth="1" x1="40" x2="660" y1="65" y2="65" />
+                  <line stroke="#21262d" strokeDasharray="3 3" strokeWidth="1" x1="40" x2="660" y1="110" y2="110" />
+                  <line stroke="#21262d" strokeWidth="1" x1="40" x2="660" y1="155" y2="155" />
 
-                {/* Y-Axis labels */}
-                <text fill="#8b949e" fontFamily="JetBrains Mono" fontSize="10" textAnchor="end" x="32" y="24">100%</text>
-                <text fill="#8b949e" fontFamily="JetBrains Mono" fontSize="10" textAnchor="end" x="32" y="69">85%</text>
-                <text fill="#8b949e" fontFamily="JetBrains Mono" fontSize="10" textAnchor="end" x="32" y="114">70%</text>
-                <text fill="#8b949e" fontFamily="JetBrains Mono" fontSize="10" textAnchor="end" x="32" y="159">0</text>
+                  {/* Y-Axis labels */}
+                  <text fill="#8b949e" fontFamily="JetBrains Mono" fontSize="10" textAnchor="end" x="32" y="24">100%</text>
+                  <text fill="#8b949e" fontFamily="JetBrains Mono" fontSize="10" textAnchor="end" x="32" y="69">85%</text>
+                  <text fill="#8b949e" fontFamily="JetBrains Mono" fontSize="10" textAnchor="end" x="32" y="114">70%</text>
+                  <text fill="#8b949e" fontFamily="JetBrains Mono" fontSize="10" textAnchor="end" x="32" y="159">0</text>
 
-                {/* Bars: PR Volume per week */}
-                <rect className="hover:fill-[#30363d] transition-colors" fill="#21262d" height="57" rx="2" width="22" x="70" y="98" />
-                <rect className="hover:fill-[#30363d] transition-colors" fill="#21262d" height="67" rx="2" width="22" x="145" y="88" />
-                <rect className="hover:fill-[#30363d] transition-colors" fill="#21262d" height="63" rx="2" width="22" x="220" y="92" />
-                <rect className="hover:fill-[#30363d] transition-colors" fill="#21262d" height="81" rx="2" width="22" x="295" y="74" />
-                <rect className="hover:fill-[#30363d] transition-colors" fill="#21262d" height="77" rx="2" width="22" x="370" y="78" />
-                <rect className="hover:fill-[#30363d] transition-colors" fill="#21262d" height="93" rx="2" width="22" x="445" y="62" />
-                <rect className="hover:fill-[#30363d] transition-colors" fill="#21262d" height="88" rx="2" width="22" x="520" y="67" />
-                <rect className="hover:fill-[#484f58] transition-colors" fill="#30363d" height="103" rx="2" width="22" x="595" y="52" />
-
-                {/* Pass Rate Area Fill */}
-                <defs>
-                  <linearGradient id="rateGrad" x1="0" x2="0" y1="0" y2="1">
-                    <stop offset="0%" stopColor="#34d399" stopOpacity="0.18" />
-                    <stop offset="100%" stopColor="#34d399" stopOpacity="0.0" />
-                  </linearGradient>
-                </defs>
-                <path d="M 81 88 L 156 82 L 231 76 L 306 63 L 381 58 L 456 46 L 531 40 L 606 28 L 606 155 L 81 155 Z" fill="url(#rateGrad)" />
-
-                {/* Pass Rate Line */}
-                <path d="M 81 88 L 156 82 L 231 76 L 306 63 L 381 58 L 456 46 L 531 40 L 606 28" fill="none" stroke="#34d399" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.25" />
-
-                {/* Line Nodes */}
-                <circle cx="81" cy="88" fill="#0d1117" r="3" stroke="#34d399" strokeWidth="2" />
-                <circle cx="156" cy="82" fill="#0d1117" r="3" stroke="#34d399" strokeWidth="2" />
-                <circle cx="231" cy="76" fill="#0d1117" r="3" stroke="#34d399" strokeWidth="2" />
-                <circle cx="306" cy="63" fill="#0d1117" r="3" stroke="#34d399" strokeWidth="2" />
-                <circle cx="381" cy="58" fill="#0d1117" r="3" stroke="#34d399" strokeWidth="2" />
-                <circle cx="456" cy="46" fill="#0d1117" r="3" stroke="#34d399" strokeWidth="2" />
-                <circle cx="531" cy="40" fill="#0d1117" r="3" stroke="#34d399" strokeWidth="2" />
-
-                {/* Highlight Week 8 Node */}
-                <circle cx="606" cy="28" fill="#34d399" r="5" stroke="#0d1117" strokeWidth="2" />
-                <line opacity="0.6" stroke="#34d399" strokeDasharray="2 2" strokeWidth="1" x1="606" x2="606" y1="28" y2="155" />
-
-                {/* Active Tooltip Tag */}
-                <g transform="translate(515, 6)">
-                  <rect fill="#0d1117" height="24" rx="4" stroke="#30363d" strokeWidth="1" width="135" />
-                  <text fill="#f0f6fc" fontFamily="JetBrains Mono" fontSize="10.5" fontWeight="bold" textAnchor="middle" x="67" y="16">
-                    64 PRs • 93.8% Pass
-                  </text>
-                </g>
-
-                {/* X-Axis Labels */}
-                <text fill="#8b949e" fontFamily="JetBrains Mono" fontSize="10" textAnchor="middle" x="81" y="174">W1</text>
-                <text fill="#8b949e" fontFamily="JetBrains Mono" fontSize="10" textAnchor="middle" x="156" y="174">W2</text>
-                <text fill="#8b949e" fontFamily="JetBrains Mono" fontSize="10" textAnchor="middle" x="231" y="174">W3</text>
-                <text fill="#8b949e" fontFamily="JetBrains Mono" fontSize="10" textAnchor="middle" x="306" y="174">W4</text>
-                <text fill="#8b949e" fontFamily="JetBrains Mono" fontSize="10" textAnchor="middle" x="381" y="174">W5</text>
-                <text fill="#8b949e" fontFamily="JetBrains Mono" fontSize="10" textAnchor="middle" x="456" y="174">W6</text>
-                <text fill="#8b949e" fontFamily="JetBrains Mono" fontSize="10" textAnchor="middle" x="531" y="174">W7</text>
-                <text fill="#f0f6fc" fontFamily="JetBrains Mono" fontSize="10.5" fontWeight="bold" textAnchor="middle" x="606" y="174">W8 (Current)</text>
-              </svg>
-            </div>
+                  {/* Pass Rate Line */}
+                  <path d="M 81 88 L 156 82 L 231 76 L 306 63 L 381 58 L 456 46 L 531 40 L 606 28" fill="none" stroke="#34d399" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.25" />
+                  <circle cx="606" cy="28" fill="#34d399" r="5" stroke="#0d1117" strokeWidth="2" />
+                </svg>
+              </div>
+            ) : (
+              <div className="w-full h-56 flex flex-col items-center justify-center border border-dashed border-[#30363d] rounded-lg mt-4 text-[#8b949e]">
+                <span className="material-symbols-outlined text-[32px] text-[#484f58] mb-2">analytics</span>
+                <p className="text-xs font-mono">No review throughput data yet</p>
+                <p className="text-[11px] font-mono text-[#484f58] mt-0.5">Telemetry trends will render as PR reviews are processed</p>
+              </div>
+            )}
           </div>
 
           <div className="mt-4 pt-3 border-t border-[#30363d]/60 flex items-center justify-between text-xs font-mono text-[#8b949e]">
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-[14px] text-emerald-400">trending_up</span>
-              <span className="text-[#c9d1d9]">Weekly throughput increased +24% with zero regression in review latency (avg 4.1s).</span>
+              <span className="text-[#c9d1d9]">
+                {reviews.length > 0
+                  ? "Throughput trend synchronized with active LangGraph pipelines."
+                  : "Awaiting initial PR events to compile throughput analytics."}
+              </span>
             </div>
-            <span className="hidden md:inline text-[11px]">Sync: 48s ago</span>
           </div>
         </div>
 
@@ -344,81 +318,96 @@ export default function DashboardPage() {
                 <p className="text-xs text-[#8b949e] font-mono mt-0.5">Distribution across 6 specialized agents</p>
               </div>
               <span className="px-2 py-0.5 rounded text-[11px] font-mono bg-[#21262d] text-[#c9d1d9] border border-[#30363d]">
-                136 Total
+                {telemetry?.total_findings ?? 0} Total
               </span>
             </div>
 
             {/* Donut Mini Visual & Module List */}
             <div className="mt-4 space-y-3 font-mono text-xs">
               {/* Item 1: Security */}
-              <div className="group">
-                <div className="flex items-center justify-between text-[11px] mb-1">
-                  <span className="text-[#f0f6fc] flex items-center gap-1.5 font-sans font-medium">
-                    <span className="w-2 h-2 rounded-full bg-rose-400" />
-                    Security Sentinel
-                  </span>
-                  <span className="text-[#8b949e]">48 findings <span className="text-[#c9d1d9] ml-1 font-semibold">35%</span></span>
-                </div>
-                <div className="w-full bg-[#21262d] h-1.5 rounded-full overflow-hidden">
-                  <div className="bg-rose-400 h-full rounded-full" style={{ width: "35%" }} />
-                </div>
-              </div>
+              {(() => {
+                const totalF = telemetry?.total_findings ?? 0;
+                const sec = telemetry?.findings_by_module?.security ?? 0;
+                const bugs = telemetry?.findings_by_module?.bugs ?? 0;
+                const err = telemetry?.findings_by_module?.error_handling ?? 0;
+                const style = telemetry?.findings_by_module?.style ?? 0;
+                const test = telemetry?.findings_by_module?.test_coverage ?? 0;
 
-              {/* Item 2: Logic & Concurrency */}
-              <div className="group">
-                <div className="flex items-center justify-between text-[11px] mb-1">
-                  <span className="text-[#f0f6fc] flex items-center gap-1.5 font-sans font-medium">
-                    <span className="w-2 h-2 rounded-full bg-amber-400" />
-                    Logic &amp; Concurrency
-                  </span>
-                  <span className="text-[#8b949e]">34 findings <span className="text-[#c9d1d9] ml-1 font-semibold">25%</span></span>
-                </div>
-                <div className="w-full bg-[#21262d] h-1.5 rounded-full overflow-hidden">
-                  <div className="bg-amber-400 h-full rounded-full" style={{ width: "25%" }} />
-                </div>
-              </div>
+                const secPct = totalF > 0 ? Math.round((sec / totalF) * 100) : 0;
+                const bugsPct = totalF > 0 ? Math.round((bugs / totalF) * 100) : 0;
+                const errPct = totalF > 0 ? Math.round((err / totalF) * 100) : 0;
+                const stylePct = totalF > 0 ? Math.round((style / totalF) * 100) : 0;
+                const testPct = totalF > 0 ? Math.round((test / totalF) * 100) : 0;
 
-              {/* Item 3: Defensive Error Handling */}
-              <div className="group">
-                <div className="flex items-center justify-between text-[11px] mb-1">
-                  <span className="text-[#f0f6fc] flex items-center gap-1.5 font-sans font-medium">
-                    <span className="w-2 h-2 rounded-full bg-blue-400" />
-                    Defensive Error Handling
-                  </span>
-                  <span className="text-[#8b949e]">27 findings <span className="text-[#c9d1d9] ml-1 font-semibold">20%</span></span>
-                </div>
-                <div className="w-full bg-[#21262d] h-1.5 rounded-full overflow-hidden">
-                  <div className="bg-blue-400 h-full rounded-full" style={{ width: "20%" }} />
-                </div>
-              </div>
+                return (
+                  <>
+                    <div className="group">
+                      <div className="flex items-center justify-between text-[11px] mb-1">
+                        <span className="text-[#f0f6fc] flex items-center gap-1.5 font-sans font-medium">
+                          <span className="w-2 h-2 rounded-full bg-rose-400" />
+                          Security Sentinel
+                        </span>
+                        <span className="text-[#8b949e]">{sec} findings <span className="text-[#c9d1d9] ml-1 font-semibold">{secPct}%</span></span>
+                      </div>
+                      <div className="w-full bg-[#21262d] h-1.5 rounded-full overflow-hidden">
+                        <div className="bg-rose-400 h-full rounded-full transition-all" style={{ width: `${secPct}%` }} />
+                      </div>
+                    </div>
 
-              {/* Item 4: Code Quality & Style */}
-              <div className="group">
-                <div className="flex items-center justify-between text-[11px] mb-1">
-                  <span className="text-[#f0f6fc] flex items-center gap-1.5 font-sans font-medium">
-                    <span className="w-2 h-2 rounded-full bg-[#8b949e]" />
-                    Code Quality &amp; Style
-                  </span>
-                  <span className="text-[#8b949e]">14 findings <span className="text-[#c9d1d9] ml-1 font-semibold">10%</span></span>
-                </div>
-                <div className="w-full bg-[#21262d] h-1.5 rounded-full overflow-hidden">
-                  <div className="bg-[#8b949e] h-full rounded-full" style={{ width: "10%" }} />
-                </div>
-              </div>
+                    <div className="group">
+                      <div className="flex items-center justify-between text-[11px] mb-1">
+                        <span className="text-[#f0f6fc] flex items-center gap-1.5 font-sans font-medium">
+                          <span className="w-2 h-2 rounded-full bg-amber-400" />
+                          Logic &amp; Concurrency
+                        </span>
+                        <span className="text-[#8b949e]">{bugs} findings <span className="text-[#c9d1d9] ml-1 font-semibold">{bugsPct}%</span></span>
+                      </div>
+                      <div className="w-full bg-[#21262d] h-1.5 rounded-full overflow-hidden">
+                        <div className="bg-amber-400 h-full rounded-full transition-all" style={{ width: `${bugsPct}%` }} />
+                      </div>
+                    </div>
 
-              {/* Item 5: Test Coverage Assurance */}
-              <div className="group">
-                <div className="flex items-center justify-between text-[11px] mb-1">
-                  <span className="text-[#f0f6fc] flex items-center gap-1.5 font-sans font-medium">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                    Test Coverage Assurance
-                  </span>
-                  <span className="text-[#8b949e]">13 findings <span className="text-[#c9d1d9] ml-1 font-semibold">10%</span></span>
-                </div>
-                <div className="w-full bg-[#21262d] h-1.5 rounded-full overflow-hidden">
-                  <div className="bg-emerald-400 h-full rounded-full" style={{ width: "10%" }} />
-                </div>
-              </div>
+                    <div className="group">
+                      <div className="flex items-center justify-between text-[11px] mb-1">
+                        <span className="text-[#f0f6fc] flex items-center gap-1.5 font-sans font-medium">
+                          <span className="w-2 h-2 rounded-full bg-blue-400" />
+                          Defensive Error Handling
+                        </span>
+                        <span className="text-[#8b949e]">{err} findings <span className="text-[#c9d1d9] ml-1 font-semibold">{errPct}%</span></span>
+                      </div>
+                      <div className="w-full bg-[#21262d] h-1.5 rounded-full overflow-hidden">
+                        <div className="bg-blue-400 h-full rounded-full transition-all" style={{ width: `${errPct}%` }} />
+                      </div>
+                    </div>
+
+                    <div className="group">
+                      <div className="flex items-center justify-between text-[11px] mb-1">
+                        <span className="text-[#f0f6fc] flex items-center gap-1.5 font-sans font-medium">
+                          <span className="w-2 h-2 rounded-full bg-[#8b949e]" />
+                          Code Quality &amp; Style
+                        </span>
+                        <span className="text-[#8b949e]">{style} findings <span className="text-[#c9d1d9] ml-1 font-semibold">{stylePct}%</span></span>
+                      </div>
+                      <div className="w-full bg-[#21262d] h-1.5 rounded-full overflow-hidden">
+                        <div className="bg-[#8b949e] h-full rounded-full transition-all" style={{ width: `${stylePct}%` }} />
+                      </div>
+                    </div>
+
+                    <div className="group">
+                      <div className="flex items-center justify-between text-[11px] mb-1">
+                        <span className="text-[#f0f6fc] flex items-center gap-1.5 font-sans font-medium">
+                          <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                          Test Coverage Assurance
+                        </span>
+                        <span className="text-[#8b949e]">{test} findings <span className="text-[#c9d1d9] ml-1 font-semibold">{testPct}%</span></span>
+                      </div>
+                      <div className="w-full bg-[#21262d] h-1.5 rounded-full overflow-hidden">
+                        <div className="bg-emerald-400 h-full rounded-full transition-all" style={{ width: `${testPct}%` }} />
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           </div>
 
@@ -445,7 +434,7 @@ export default function DashboardPage() {
               <h2 className="text-sm font-semibold text-[#f0f6fc] tracking-tight">Live Pull Request Feed</h2>
             </div>
             <span className="text-[11px] font-mono text-[#8b949e] px-2 py-0.5 rounded bg-[#21262d] border border-[#30363d]/80">
-              {reviews.length > 0 ? `${reviews.length} active in queue • ${total} total` : "3 active in queue • 428 total"}
+              {reviews.length > 0 ? `${reviews.length} active in queue • ${telemetry?.total_reviews ?? total} total` : "0 reviews in queue"}
             </span>
           </div>
 
@@ -630,178 +619,32 @@ export default function DashboardPage() {
                   );
                 })
               ) : (
-                /* Fallback Stitch Default High-Density Sample Rows */
-                <>
-                  <tr className="hover:bg-[#21262d]/40 transition-colors">
-                    <td className="py-3 px-4 whitespace-nowrap">
-                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-mono font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                        <span className="material-symbols-outlined text-[13px]">check_circle</span>
-                        Completed
-                      </span>
-                    </td>
-                    <td className="py-3 px-4">
-                      <div className="flex flex-col">
-                        <Link href="/dashboard/reviews/1" className="font-mono text-xs font-semibold text-[#f0f6fc] hover:text-[#58a6ff] transition-colors leading-snug">
-                          #142 feat(billing): integrate multi-tenant Stripe webhooks
-                        </Link>
-                        <div className="flex items-center gap-1.5 mt-0.5 text-[11px] font-mono text-[#8b949e]">
-                          <span className="material-symbols-outlined text-[12px] text-[#484f58]">fork_right</span>
-                          <span>feature/stripe-webhooks</span>
-                        </div>
+                <tr>
+                  <td colSpan={8} className="py-16 text-center">
+                    <div className="flex flex-col items-center justify-center max-w-md mx-auto text-center">
+                      <div className="w-12 h-12 rounded-full bg-[#21262d] border border-[#30363d] flex items-center justify-center text-[#8b949e] mb-3">
+                        <span className="material-symbols-outlined text-[24px]">inbox</span>
                       </div>
-                    </td>
-                    <td className="py-3 px-4 font-mono text-[11px] text-[#c9d1d9] whitespace-nowrap">acme-corp/payment-service</td>
-                    <td className="py-3 px-4 whitespace-nowrap">
-                      <div className="flex items-center gap-1.5">
-                        <div className="w-5 h-5 rounded-full bg-[#30363d] flex items-center justify-center text-[10px] font-mono text-[#c9d1d9]">OC</div>
-                        <span className="font-mono text-[11px] text-[#8b949e]">@octocat</span>
-                      </div>
-                    </td>
-                    <td className="py-3 px-4 whitespace-nowrap">
-                      <span className="font-mono font-semibold px-2 py-0.5 rounded text-[11px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">8.5 / 10</span>
-                    </td>
-                    <td className="py-3 px-4 whitespace-nowrap">
-                      <div className="flex items-center gap-1.5 font-mono text-[10px]">
-                        <span className="px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20 font-medium">1 Crit</span>
-                        <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-medium">2 Warn</span>
-                      </div>
-                    </td>
-                    <td className="py-3 px-4 font-mono text-[11px] text-[#8b949e] whitespace-nowrap">8m ago</td>
-                    <td className="py-3 px-4 text-right whitespace-nowrap">
-                      <Link href="/dashboard/reviews/1" className="inline-flex items-center gap-1 text-xs font-mono text-[#58a6ff] hover:text-white transition-colors">
-                        View Analysis <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
-                      </Link>
-                    </td>
-                  </tr>
-
-                  <tr className="hover:bg-[#21262d]/40 transition-colors bg-[#21262d]/10">
-                    <td className="py-3 px-4 whitespace-nowrap">
-                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-mono font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                        <span className="material-symbols-outlined text-[13px] animate-spin">progress_activity</span>
-                        In Progress
-                      </span>
-                    </td>
-                    <td className="py-3 px-4">
-                      <div className="flex flex-col">
-                        <Link href="/dashboard/reviews/1" className="font-mono text-xs font-semibold text-[#f0f6fc] hover:text-[#58a6ff] transition-colors leading-snug">
-                          #89 fix(auth): session expiration edge case
-                        </Link>
-                        <div className="flex items-center gap-1.5 mt-0.5 text-[11px] font-mono text-[#8b949e]">
-                          <span className="material-symbols-outlined text-[12px] text-[#484f58]">fork_right</span>
-                          <span>fix/session-expiry</span>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-3 px-4 font-mono text-[11px] text-[#c9d1d9] whitespace-nowrap">acme-corp/auth-gateway</td>
-                    <td className="py-3 px-4 whitespace-nowrap">
-                      <div className="flex items-center gap-1.5">
-                        <div className="w-5 h-5 rounded-full bg-[#30363d] flex items-center justify-center text-[10px] font-mono text-[#c9d1d9]">DL</div>
-                        <span className="font-mono text-[11px] text-[#8b949e]">@dev-lead</span>
-                      </div>
-                    </td>
-                    <td className="py-3 px-4 whitespace-nowrap">
-                      <span className="font-mono text-[11px] text-[#8b949e] px-2 py-0.5 rounded bg-[#21262d] border border-[#30363d] animate-pulse">Evaluating...</span>
-                    </td>
-                    <td className="py-3 px-4 whitespace-nowrap">
-                      <span className="font-mono text-[11px] text-[#c9d1d9] flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
-                        Inspecting (4/6 agents done)
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 font-mono text-[11px] text-[#8b949e] whitespace-nowrap">1m ago</td>
-                    <td className="py-3 px-4 text-right whitespace-nowrap">
-                      <Link href="/dashboard/reviews/1" className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-[#21262d] hover:bg-[#30363d] text-[#c9d1d9] hover:text-white border border-[#30363d] text-xs font-mono transition-colors">
-                        <span className="material-symbols-outlined text-[13px] text-amber-400">visibility</span>
-                        Inspect Live →
-                      </Link>
-                    </td>
-                  </tr>
-
-                  <tr className="hover:bg-rose-500/5 transition-colors bg-rose-500/[0.02]">
-                    <td className="py-3 px-4 whitespace-nowrap">
-                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-mono font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20">
-                        <span className="material-symbols-outlined text-[13px]">dangerous</span>
-                        Blocker Detected
-                      </span>
-                    </td>
-                    <td className="py-3 px-4">
-                      <div className="flex flex-col">
-                        <Link href="/dashboard/reviews/1" className="font-mono text-xs font-semibold text-rose-300 hover:text-rose-200 transition-colors leading-snug">
-                          #204 refactor(db): migration without rollback plan
-                        </Link>
-                        <div className="flex items-center gap-1.5 mt-0.5 text-[11px] font-mono text-[#8b949e]">
-                          <span className="material-symbols-outlined text-[12px] text-[#484f58]">fork_right</span>
-                          <span>refactor/db-migration</span>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-3 px-4 font-mono text-[11px] text-[#c9d1d9] whitespace-nowrap">acme-corp/core-api</td>
-                    <td className="py-3 px-4 whitespace-nowrap">
-                      <div className="flex items-center gap-1.5">
-                        <div className="w-5 h-5 rounded-full bg-[#30363d] flex items-center justify-center text-[10px] font-mono text-[#c9d1d9]">JE</div>
-                        <span className="font-mono text-[11px] text-[#8b949e]">@junior-eng</span>
-                      </div>
-                    </td>
-                    <td className="py-3 px-4 whitespace-nowrap">
-                      <span className="font-mono font-semibold px-2 py-0.5 rounded text-[11px] bg-rose-500/10 text-rose-400 border border-rose-500/20">3.2 / 10</span>
-                    </td>
-                    <td className="py-3 px-4 whitespace-nowrap">
-                      <div className="flex items-center gap-1.5 font-mono text-[10px]">
-                        <span className="px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-400 border border-rose-500/30 font-semibold">3 Crit</span>
-                        <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-medium">4 Warn</span>
-                      </div>
-                    </td>
-                    <td className="py-3 px-4 font-mono text-[11px] text-[#8b949e] whitespace-nowrap">2h ago</td>
-                    <td className="py-3 px-4 text-right whitespace-nowrap">
-                      <Link href="/dashboard/reviews/1" className="inline-flex items-center gap-1 text-xs font-mono text-rose-400 hover:text-rose-300 transition-colors">
-                        View Analysis <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
-                      </Link>
-                    </td>
-                  </tr>
-
-                  <tr className="hover:bg-[#21262d]/40 transition-colors">
-                    <td className="py-3 px-4 whitespace-nowrap">
-                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-mono font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                        <span className="material-symbols-outlined text-[13px]">check_circle</span>
-                        Completed
-                      </span>
-                    </td>
-                    <td className="py-3 px-4">
-                      <div className="flex flex-col">
-                        <Link href="/dashboard/reviews/1" className="font-mono text-xs font-semibold text-[#f0f6fc] hover:text-[#58a6ff] transition-colors leading-snug">
-                          #78 chore(deps): bump cryptographic hashing packages
-                        </Link>
-                        <div className="flex items-center gap-1.5 mt-0.5 text-[11px] font-mono text-[#8b949e]">
-                          <span className="material-symbols-outlined text-[12px] text-[#484f58]">fork_right</span>
-                          <span>deps/crypto-bump</span>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-3 px-4 font-mono text-[11px] text-[#c9d1d9] whitespace-nowrap">acme-corp/payment-service</td>
-                    <td className="py-3 px-4 whitespace-nowrap">
-                      <div className="flex items-center gap-1.5">
-                        <div className="w-5 h-5 rounded-full bg-[#30363d] flex items-center justify-center text-[10px] font-mono text-[#c9d1d9]">DB</div>
-                        <span className="font-mono text-[11px] text-[#8b949e]">@dependabot</span>
-                      </div>
-                    </td>
-                    <td className="py-3 px-4 whitespace-nowrap">
-                      <span className="font-mono font-semibold px-2 py-0.5 rounded text-[11px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">9.8 / 10</span>
-                    </td>
-                    <td className="py-3 px-4 whitespace-nowrap">
-                      <div className="flex items-center gap-1.5 font-mono text-[10px]">
-                        <span className="px-1.5 py-0.5 rounded bg-[#21262d] text-[#8b949e] border border-[#30363d]">0 Crit</span>
-                        <span className="px-1.5 py-0.5 rounded bg-[#21262d] text-[#8b949e] border border-[#30363d]">0 Warn</span>
-                        <span className="px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">1 Info</span>
-                      </div>
-                    </td>
-                    <td className="py-3 px-4 font-mono text-[11px] text-[#8b949e] whitespace-nowrap">3h ago</td>
-                    <td className="py-3 px-4 text-right whitespace-nowrap">
-                      <Link href="/dashboard/reviews/1" className="inline-flex items-center gap-1 text-xs font-mono text-[#58a6ff] hover:text-white transition-colors">
-                        View Analysis <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
-                      </Link>
-                    </td>
-                  </tr>
-                </>
+                      <h3 className="text-sm font-semibold text-[#f0f6fc]">No reviews in queue</h3>
+                      <p className="text-xs text-[#8b949e] mt-1 font-mono">
+                        {searchQuery
+                          ? "No reviews match your query."
+                          : "No pull request reviews have been executed yet. Push code or open a PR to trigger the sentinel fleet."}
+                      </p>
+                      {publicConfig?.github_app_slug && (
+                        <a
+                          href={`https://github.com/apps/${publicConfig.github_app_slug}/installations/new`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-4 px-3.5 py-1.5 rounded-md bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-medium inline-flex items-center gap-1.5 transition-colors"
+                        >
+                          <span className="material-symbols-outlined text-[15px]">add</span>
+                          Install GitHub App
+                        </a>
+                      )}
+                    </div>
+                  </td>
+                </tr>
               )}
             </tbody>
           </table>
@@ -810,9 +653,14 @@ export default function DashboardPage() {
         {/* 5. Table Footer / Pagination */}
         <div className="p-4 border-t border-[#30363d] bg-[#161b22] flex flex-col sm:flex-row items-center justify-between gap-3 text-xs font-mono text-[#8b949e]">
           <div className="flex items-center gap-2">
-            <span>Showing <strong className="text-[#f0f6fc]">1-5</strong> of <strong className="text-[#f0f6fc]">{total > 0 ? total : 428}</strong> reviews</span>
+            <span>
+              Showing <strong className="text-[#f0f6fc]">{reviews.length > 0 ? 1 : 0}-{filteredReviews.length}</strong> of{" "}
+              <strong className="text-[#f0f6fc]">{telemetry?.total_reviews ?? total}</strong> reviews
+            </span>
             <span className="text-[#484f58]">•</span>
-            <span>14 synchronized repositories</span>
+            <span>
+              {telemetry?.total_repos ?? 0} synchronized {telemetry?.total_repos === 1 ? "repository" : "repositories"}
+            </span>
           </div>
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-1.5">
