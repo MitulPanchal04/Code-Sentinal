@@ -48,6 +48,36 @@ _STEP_LABELS: dict[str, str] = {
 
 _TOTAL_STEPS = len(_STEP_LABELS)
 
+_INSPECTION_AGENTS: set[str] = {
+    "security",
+    "bugs",
+    "style",
+    "error_handling",
+    "test_coverage",
+    "comment_accuracy",
+}
+
+
+def calculate_review_cost(model: str, tokens: dict) -> float:
+    """Calculate review cost in USD using LiteLLM with resilient tier fallbacks."""
+    try:
+        import litellm
+        in_tok = tokens.get("input", 0)
+        out_tok = tokens.get("output", 0)
+        cost_tuple = litellm.cost_per_token(model=model, prompt_tokens=in_tok, completion_tokens=out_tok)
+        return round(float(cost_tuple[0] + cost_tuple[1]), 5)
+    except Exception:
+        in_tok = tokens.get("input", 0)
+        out_tok = tokens.get("output", 0)
+        m = (model or "").lower()
+        if "mini" in m or "haiku" in m:
+            c = (in_tok * 0.00000015) + (out_tok * 0.00000060)
+        elif "sonnet" in m or "astra" in m or "o1" in m or "o3" in m:
+            c = (in_tok * 0.0000030) + (out_tok * 0.0000150)
+        else:
+            c = (in_tok * 0.0000025) + (out_tok * 0.0000100)
+        return round(c, 5)
+
 
 def _format_review_comment(
     summary: str,
@@ -202,8 +232,34 @@ async def process_review_job(job: ReviewJob) -> None:
         except Exception as e:
             logger.warning("check_run_update_failed", error=str(e))
 
-    # Per-step progress callback — updates the check run summary as each agent finishes
+    # Immediately mark review as in_progress in database
+    try:
+        async with async_session_factory() as session:
+            await session.execute(
+                update(Review)
+                .where(
+                    Review.repo_full_name == repo_full_name,
+                    Review.pr_number_commit_sha == pr_number_commit_sha,
+                )
+                .values(
+                    status="in_progress",
+                    verdict="in_progress",
+                    progress={
+                        "completed_agents": 0,
+                        "total_agents": 6,
+                        "current_step": "load_context",
+                        "step_label": "Loading PR context",
+                    },
+                    updated_at=utcnow(),
+                )
+            )
+            await session.commit()
+    except Exception as exc:
+        logger.debug("review_initial_progress_failed", error=str(exc))
+
+    # Per-step progress callback — updates DB and GitHub check run as each agent finishes
     completed_steps: list[str] = []
+    completed_agent_nodes: set[str] = set()
     accumulated_tokens: dict = {"input": 0, "output": 0}
 
     async def _on_step(node_name: str, output: dict) -> None:
@@ -211,6 +267,36 @@ async def process_review_job(job: ReviewJob) -> None:
         node_tokens = output.get("tokens_used") or {}
         accumulated_tokens["input"] += node_tokens.get("input", 0)
         accumulated_tokens["output"] += node_tokens.get("output", 0)
+
+        if node_name in _INSPECTION_AGENTS:
+            completed_agent_nodes.add(node_name)
+
+        progress_payload = {
+            "completed_agents": len(completed_agent_nodes),
+            "total_agents": 6,
+            "current_step": node_name,
+            "step_label": _STEP_LABELS.get(node_name, node_name),
+        }
+
+        # Update database with live agent progress
+        try:
+            async with async_session_factory() as session:
+                await session.execute(
+                    update(Review)
+                    .where(
+                        Review.repo_full_name == repo_full_name,
+                        Review.pr_number_commit_sha == pr_number_commit_sha,
+                    )
+                    .values(
+                        status="in_progress",
+                        verdict="in_progress",
+                        progress=progress_payload,
+                        updated_at=utcnow(),
+                    )
+                )
+                await session.commit()
+        except Exception as exc:
+            logger.debug("review_progress_update_failed", error=str(exc))
 
         label = _STEP_LABELS.get(node_name)
         if not label or not check_run_id:
@@ -296,7 +382,11 @@ async def process_review_job(job: ReviewJob) -> None:
         merge_score = result.get("merge_score", 5)
         merge_score_reason = result.get("merge_score_reason", "")
         delta_caption = result.get("delta_caption", "")
+        tokens_used = result.get("tokens_used") or {}
         cost = result.get("cost_usd", 0.0)
+        if cost <= 0.0:
+            active_model = (repo_settings_dict or {}).get("model_id") or _settings.llm_model
+            cost = calculate_review_cost(active_model, tokens_used)
 
         # Format and post review comment
         comment_body = _format_review_comment(
@@ -559,8 +649,33 @@ async def _store_review_result(
         )
         review = existing.scalar_one_or_none()
 
+        if status == "failed":
+            final_verdict = "blocked"
+        elif status == "complete":
+            has_crit = any(
+                isinstance(f, dict) and f.get("severity") == "critical"
+                for f in findings
+            )
+            if has_crit or (merge_score is not None and merge_score < 5):
+                final_verdict = "blocked"
+            elif merge_score is not None and merge_score >= 8 and not has_crit:
+                final_verdict = "merge_ready"
+            else:
+                final_verdict = "changes_requested"
+        else:
+            final_verdict = "in_progress"
+
+        final_progress = {
+            "completed_agents": enabled_agent_count or 6,
+            "total_agents": enabled_agent_count or 6,
+            "current_step": "complete",
+            "step_label": "Review complete" if status == "complete" else "Review failed",
+        }
+
         if review:
             review.status = status
+            review.verdict = final_verdict
+            review.progress = final_progress
             review.findings = findings
             review.summary = summary
             review.diagram = diagram
@@ -581,6 +696,8 @@ async def _store_review_result(
                 pr_number_commit_sha=pr_number_commit_sha,
                 commit_sha=commit_sha,
                 status=status,
+                verdict=final_verdict,
+                progress=final_progress,
                 findings=findings,
                 summary=summary,
                 diagram=diagram,

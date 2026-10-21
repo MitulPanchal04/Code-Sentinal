@@ -142,6 +142,12 @@ async def retry_review(
 
     # Reset review state to pending and clear old error
     review.status = "pending"
+    review.verdict = "in_progress"
+    review.progress = {
+        "completed_agents": 0,
+        "total_agents": 6,
+        "current_step": "queued",
+    }
     review.error_message = None
 
     # Optionally create/queue a check run on GitHub
@@ -212,6 +218,29 @@ async def retry_review(
     }
 
 
+def _compute_verdict(r: Review) -> str:
+    if getattr(r, "verdict", None):
+        return r.verdict
+    if r.status in ("pending", "in_progress", "processing"):
+        return "in_progress"
+    if r.status == "failed":
+        return "blocked"
+    if r.status == "complete":
+        findings = r.findings or []
+        has_critical = any(
+            isinstance(f, dict) and f.get("severity") == "critical"
+            for f in findings
+        )
+        if has_critical or (r.merge_score is not None and r.merge_score < 5):
+            return "blocked"
+        if r.merge_score is not None and r.merge_score >= 8 and not has_critical:
+            return "merge_ready"
+        return "changes_requested"
+    if r.status == "not_reviewed":
+        return "not_reviewed"
+    return "in_progress"
+
+
 def _serialize_review(r: Review) -> dict[str, Any]:
     return {
         "id": r.id,
@@ -220,6 +249,12 @@ def _serialize_review(r: Review) -> dict[str, Any]:
         "pr_number": r.pr_number,
         "commit_sha": r.commit_sha,
         "status": r.status,
+        "verdict": _compute_verdict(r),
+        "progress": getattr(r, "progress", None) or {
+            "completed_agents": 0,
+            "total_agents": 6,
+            "current_step": "queued",
+        },
         "pr_state": r.pr_state,
         "pr_title": r.pr_title,
         "pr_url": r.pr_url,

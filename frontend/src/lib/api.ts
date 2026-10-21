@@ -19,6 +19,13 @@ export interface Review {
   pr_number: number;
   commit_sha: string;
   status: string;
+  verdict?: "merge_ready" | "changes_requested" | "blocked" | "in_progress" | "not_reviewed" | string;
+  progress?: {
+    completed_agents: number;
+    total_agents: number;
+    current_step: string;
+    step_label?: string;
+  };
   pr_state: string | null;
   pr_title: string | null;
   pr_url: string | null;
@@ -176,4 +183,42 @@ export const api = {
         body: JSON.stringify(body),
       }
     ),
+
+  getPublicConfig: () =>
+    apiFetch<PublicConfig>("/api/config/public"),
+
+  updateGlobalModel: (modelId: string) =>
+    apiFetch<{ status: string; model: string; provider: string }>(
+      "/api/settings/model",
+      {
+        method: "POST",
+        body: JSON.stringify({ model_id: modelId }),
+      }
+    ),
 };
+
+export interface ModelOption {
+  id: string;
+  name: string;
+  provider: string;
+  tag?: string;
+  recommended?: boolean;
+  tier?: string;
+  context_window?: string;
+  latency?: string;
+  avg_latency?: string;
+  cost_per_review?: string;
+  description?: string;
+}
+
+export interface PublicConfig {
+  github_app_slug: string;
+  github_app_id?: number;
+  webhook_url: string;
+  webhook_secret_configured?: boolean;
+  hmac_enforced?: boolean;
+  selected_model?: string;
+  primary_model?: string;
+  available_models: ModelOption[];
+}
+

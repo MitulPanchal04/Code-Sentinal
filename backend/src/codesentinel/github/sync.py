@@ -107,6 +107,12 @@ def _upsert_row(
                 pr_number_commit_sha=key,
                 commit_sha=commit_sha,
                 status=_PENDING if mark_pending else _NOT_REVIEWED,
+                verdict="in_progress" if mark_pending else "not_reviewed",
+                progress={
+                    "completed_agents": 0,
+                    "total_agents": 6,
+                    "current_step": "queued",
+                },
             )
             session.add(target)
             rows.append(target)
@@ -114,6 +120,12 @@ def _upsert_row(
 
     if mark_pending:
         target.status = _PENDING
+        target.verdict = "in_progress"
+        target.progress = {
+            "completed_agents": 0,
+            "total_agents": 6,
+            "current_step": "queued",
+        }
 
     for r in pr_rows:
         apply_pr_meta(r, pr, repo_id=repo_id)
@@ -179,6 +191,12 @@ async def mark_review_pending(
         row = result.scalar_one_or_none()
         if row is not None:
             row.status = _PENDING
+            row.verdict = "in_progress"
+            row.progress = {
+                "completed_agents": 0,
+                "total_agents": 6,
+                "current_step": "queued",
+            }
             row.error_message = None
             await session.commit()
 

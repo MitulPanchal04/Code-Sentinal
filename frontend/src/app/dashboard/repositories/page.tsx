@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { api, type Installation, type RepoSettings } from "@/lib/api";
+import { api, type Installation, type RepoSettings, type PublicConfig } from "@/lib/api";
 import { RepoSettingsModal } from "@/components/RepoSettingsModal";
 
 interface DisplayRepo {
@@ -17,77 +17,9 @@ interface DisplayRepo {
   settings?: RepoSettings;
 }
 
-const DEFAULT_DEMO_REPOS: DisplayRepo[] = [
-  {
-    id: 1,
-    repo_full_name: "acme-corp/payment-service",
-    installation_id: 849202,
-    policyTier: "High Assurance",
-    tierIcon: "security",
-    models: "Claude 3.5 Sonnet / GPT-4o",
-    activeModules: ["SecOps", "AuthZ", "PCI-DSS", "Concurrency", "SQLi", "Telemetry"],
-    rulesCount: 14,
-    webhookActive: true,
-  },
-  {
-    id: 2,
-    repo_full_name: "acme-corp/checkout-api",
-    installation_id: 849202,
-    policyTier: "Standard",
-    tierIcon: "balance",
-    models: "Claude 3.5 Sonnet",
-    activeModules: ["SecOps", "AuthZ", "SQLi", "Telemetry"],
-    rulesCount: 9,
-    webhookActive: true,
-  },
-  {
-    id: 3,
-    repo_full_name: "acme-corp/marketing-frontend",
-    installation_id: 849110,
-    policyTier: "Rapid Dev",
-    tierIcon: "bolt",
-    models: "GPT-4o-mini",
-    activeModules: ["BundleSize", "A11y-Lint"],
-    rulesCount: 4,
-    webhookActive: true,
-  },
-  {
-    id: 4,
-    repo_full_name: "acme-corp/auth-federation-core",
-    installation_id: 849202,
-    policyTier: "High Assurance",
-    tierIcon: "security",
-    models: "Claude 3.5 Sonnet / O3-Mini",
-    activeModules: ["OIDC/SAML", "CryptoVerify", "ReplayAttack", "ZeroTrust", "AuditTrail", "SecretScan"],
-    rulesCount: 18,
-    webhookActive: true,
-  },
-  {
-    id: 5,
-    repo_full_name: "acme-corp/data-warehouse-etl",
-    installation_id: 849202,
-    policyTier: "Standard",
-    tierIcon: "balance",
-    models: "GPT-4o",
-    activeModules: ["DataLineage", "PII-Guard", "QueryCost", "SchemaDrift", "DB-Locks"],
-    rulesCount: 11,
-    webhookActive: true,
-  },
-  {
-    id: 6,
-    repo_full_name: "acme-corp/developer-docs-portal",
-    installation_id: 849110,
-    policyTier: "Rapid Dev",
-    tierIcon: "bolt",
-    models: "Claude 3.5 Haiku",
-    activeModules: ["MarkdownCheck", "DeadLinks"],
-    rulesCount: 3,
-    webhookActive: true,
-  },
-];
-
 export default function RepositoriesPage() {
   const [installations, setInstallations] = useState<Installation[]>([]);
+  const [publicConfig, setPublicConfig] = useState<PublicConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState("");
@@ -102,10 +34,14 @@ export default function RepositoriesPage() {
     else setLoading(true);
 
     try {
-      const data = await api.listInstallations();
+      const [data, configData] = await Promise.all([
+        api.listInstallations().catch(() => ({ installations: [] })),
+        api.getPublicConfig().catch(() => null),
+      ]);
       setInstallations(data.installations || []);
+      if (configData) setPublicConfig(configData);
     } catch (err: unknown) {
-      console.warn("Could not fetch installations from backend, using active configuration:", err);
+      console.warn("Could not fetch installations from backend:", err);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -116,36 +52,44 @@ export default function RepositoriesPage() {
     fetchData();
   }, [fetchData]);
 
-  // Combine real installations with demo fallback
+  // Construct display items directly from real installations
   const combinedRepos: DisplayRepo[] = useMemo(() => {
-    if (installations.length === 0) {
-      return DEFAULT_DEMO_REPOS;
-    }
-
     return installations.map((inst, idx) => {
-      const demoFallback = DEFAULT_DEMO_REPOS[idx % DEFAULT_DEMO_REPOS.length];
       const settings = (inst.config as unknown as RepoSettings) || undefined;
       const tier: "High Assurance" | "Standard" | "Rapid Dev" =
-        settings?.min_confidence && settings.min_confidence <= 65
+        settings?.profile === "strict"
           ? "High Assurance"
-          : settings?.min_confidence && settings.min_confidence >= 85
+          : settings?.profile === "lenient"
           ? "Rapid Dev"
           : "Standard";
 
+      const modules = settings?.enabled_agents?.map(
+        (a) => a.charAt(0).toUpperCase() + a.slice(1)
+      ) || [
+        "Security",
+        "Bugs",
+        "ErrorHandling",
+        "Style",
+        "TestCoverage",
+        "CommentAccuracy",
+      ];
+
       return {
-        id: inst.installation_id,
+        id: inst.installation_id * 1000 + idx,
         repo_full_name: inst.repo_full_name,
         installation_id: inst.installation_id,
         policyTier: tier,
         tierIcon: tier === "High Assurance" ? "security" : tier === "Standard" ? "balance" : "bolt",
-        models: inst.model_id || demoFallback.models,
-        activeModules: settings?.enabled_agents?.map((a) => a.charAt(0).toUpperCase() + a.slice(1)) || demoFallback.activeModules,
-        rulesCount: settings?.rulebook ? (settings.rulebook.match(/###|- \*\*/g) || []).length || 5 : demoFallback.rulesCount,
+        models: inst.model_id || publicConfig?.primary_model || "Claude 3.7 Sonnet / GPT-6 Astra",
+        activeModules: modules,
+        rulesCount: settings?.rulebook
+          ? (settings.rulebook.match(/###|- \*\*/g) || []).length || 6
+          : 6,
         webhookActive: true,
         settings,
       };
     });
-  }, [installations]);
+  }, [installations, publicConfig]);
 
   const filteredRepos = useMemo(() => {
     return combinedRepos.filter((repo) => {
@@ -163,6 +107,9 @@ export default function RepositoriesPage() {
       return true;
     });
   }, [combinedRepos, search, filterTab]);
+
+  const appSlug = publicConfig?.github_app_slug || "code-sentinel-app";
+  const installUrl = `https://github.com/apps/${appSlug}/installations/new`;
 
   return (
     <div className="flex flex-col w-full pb-12">
@@ -204,7 +151,7 @@ export default function RepositoriesPage() {
             <span>{refreshing ? "Refreshing..." : "Refresh Status"}</span>
           </button>
           <a
-            href="https://github.com/apps"
+            href={installUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-2 px-3.5 h-9 rounded-md bg-[#238636] hover:bg-[#2ea043] text-white font-medium text-[12px] border border-[rgba(240,246,252,0.1)] transition-colors shadow-sm"
@@ -412,7 +359,38 @@ export default function RepositoriesPage() {
             : "flex flex-col gap-4"
         }
       >
-        {filteredRepos.map((repo) => (
+        {loading ? (
+          <div className="col-span-full py-16 text-center text-[#8b949e] font-mono text-xs flex flex-col items-center gap-3">
+            <span className="material-symbols-outlined text-2xl animate-spin text-[#58a6ff]">progress_activity</span>
+            <span>Discovering connected GitHub repositories...</span>
+          </div>
+        ) : combinedRepos.length === 0 ? (
+          <div className="col-span-full rounded-xl bg-[#161b22] border border-[#30363d] p-10 text-center flex flex-col items-center justify-center max-w-xl mx-auto my-10 shadow-sm">
+            <div className="w-14 h-14 rounded-full bg-[#21262d] border border-[#30363d] flex items-center justify-center text-[#58a6ff] mb-4">
+              <span className="material-symbols-outlined text-3xl">account_tree</span>
+            </div>
+            <h3 className="text-[18px] font-semibold text-[#f0f6fc] mb-2 font-display">
+              No Repositories Connected Yet
+            </h3>
+            <p className="text-[13px] text-[#8b949e] mb-6 max-w-md leading-relaxed">
+              Connect CodeSentinel to your GitHub repositories or organization to enable automated multi-agent code reviews, architectural rulebook enforcement, and live defect interception.
+            </p>
+            <a
+              href={installUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-[#238636] hover:bg-[#2ea043] text-white font-semibold text-[13px] border border-[rgba(240,246,252,0.1)] transition-colors shadow-sm"
+            >
+              <span className="material-symbols-outlined text-[18px]">add</span>
+              <span>Install CodeSentinel GitHub App</span>
+            </a>
+          </div>
+        ) : filteredRepos.length === 0 ? (
+          <div className="col-span-full py-12 text-center text-[#8b949e] font-mono text-xs">
+            No repositories match &quot;{search}&quot;.
+          </div>
+        ) : (
+          filteredRepos.map((repo) => (
           <article
             key={repo.id}
             className="flex flex-col justify-between rounded-xl bg-[#161b22] border border-[#30363d] hover:border-[#8b949e] transition-colors duration-150 shadow-sm"
@@ -512,7 +490,7 @@ export default function RepositoriesPage() {
               </div>
             </div>
           </article>
-        ))}
+        )))}
       </div>
 
       {/* Bottom Inline Audit / Quick Telemetry Ribbon */}

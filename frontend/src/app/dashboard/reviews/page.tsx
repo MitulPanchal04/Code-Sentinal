@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { api, Review } from "@/lib/api";
+import { api, Review, PublicConfig } from "@/lib/api";
 
 interface DemoReviewItem {
   id: string | number;
@@ -17,6 +17,7 @@ interface DemoReviewItem {
   verdict: "Merge Ready" | "In Progress" | "Blocked" | "Changes Req";
   merge_score: string;
   findings: { crit?: number; warn?: number; info?: number };
+  progress?: { completed_agents?: number; total_agents?: number; current_step?: string };
   cost_and_tokens: string;
   completed_ago: string;
 }
@@ -49,6 +50,7 @@ const DEMO_REVIEWS: DemoReviewItem[] = [
     verdict: "In Progress",
     merge_score: "Evaluating...",
     findings: {},
+    progress: { completed_agents: 4, total_agents: 6, current_step: "style" },
     cost_and_tokens: "Running...",
     completed_ago: "1m ago",
   },
@@ -99,10 +101,11 @@ const DEMO_REVIEWS: DemoReviewItem[] = [
   },
 ];
 
-export default function ReviewsPage() {
+function ReviewsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [reviews, setReviews] = useState<Review[]>([]);
+  const [publicConfig, setPublicConfig] = useState<PublicConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -115,11 +118,20 @@ export default function ReviewsPage() {
     else setLoading(true);
 
     try {
-      const data = await api.listReviews({
-        repo: repoFilter !== "all" ? repoFilter : undefined,
-        limit: 100,
-      });
-      setReviews(data.reviews || []);
+      const [reviewData, configData] = await Promise.allSettled([
+        api.listReviews({
+          repo: repoFilter !== "all" ? repoFilter : undefined,
+          limit: 100,
+        }),
+        api.getPublicConfig(),
+      ]);
+
+      if (reviewData.status === "fulfilled") {
+        setReviews(reviewData.value.reviews || []);
+      }
+      if (configData.status === "fulfilled") {
+        setPublicConfig(configData.value);
+      }
     } catch (err: unknown) {
       console.warn("Could not fetch reviews from backend, rendering sample review audit list:", err);
     } finally {
@@ -132,24 +144,50 @@ export default function ReviewsPage() {
     fetchData();
   }, [fetchData]);
 
+  // Reactive auto-polling while any review is actively in-progress
+  useEffect(() => {
+    const hasActive = reviews.some(
+      (r) => r.status === "in_progress" || r.status === "pending" || r.verdict === "in_progress"
+    );
+    if (!hasActive) return;
+
+    const timer = setTimeout(() => {
+      fetchData(true);
+    }, 2500);
+
+    return () => clearTimeout(timer);
+  }, [reviews, fetchData]);
+
   const displayRows: DemoReviewItem[] = useMemo(() => {
     if (reviews.length === 0) return DEMO_REVIEWS;
 
     return reviews.map((r) => {
-      const isBlocked = r.status === "failed" || (r.merge_score !== null && r.merge_score < 3);
-      const isMergeReady = (r.merge_score !== null && r.merge_score >= 4) && r.status === "complete";
-      const isInProg = r.status !== "complete" && r.status !== "failed";
-
-      const verdict: DemoReviewItem["verdict"] = isBlocked
-        ? "Blocked"
-        : isMergeReady
-        ? "Merge Ready"
-        : isInProg
-        ? "In Progress"
-        : "Changes Req";
+      // Determine verdict using r.verdict if present, or deterministic calculation
+      let verdict: DemoReviewItem["verdict"];
+      if (r.verdict === "merge_ready") {
+        verdict = "Merge Ready";
+      } else if (r.verdict === "in_progress") {
+        verdict = "In Progress";
+      } else if (r.verdict === "blocked") {
+        verdict = "Blocked";
+      } else if (r.verdict === "changes_requested") {
+        verdict = "Changes Req";
+      } else {
+        const isBlocked = r.status === "failed" || (r.merge_score !== null && r.merge_score < 3);
+        const isMergeReady = (r.merge_score !== null && r.merge_score >= 4) && r.status === "complete";
+        const isInProg = r.status === "in_progress" || r.status === "pending";
+        verdict = isBlocked
+          ? "Blocked"
+          : isMergeReady
+          ? "Merge Ready"
+          : isInProg
+          ? "In Progress"
+          : "Changes Req";
+      }
 
       const critCount = r.findings?.filter((f) => f.severity === "critical").length || 0;
       const warnCount = r.findings?.filter((f) => f.severity === "warning").length || 0;
+      const infoCount = r.findings?.filter((f) => f.severity === "info").length || 0;
 
       return {
         id: r.id,
@@ -161,9 +199,10 @@ export default function ReviewsPage() {
         sender_login: r.author || "dev",
         commit_sha: r.commit_sha ? r.commit_sha.substring(0, 7) : "abcdef",
         verdict,
-        merge_score: r.merge_score ? `${(r.merge_score * 2).toFixed(1)} / 10` : "8.0 / 10",
-        findings: { crit: critCount || undefined, warn: warnCount || undefined },
-        cost_and_tokens: "$0.041 • 14.8k",
+        merge_score: verdict === "In Progress" ? "Evaluating..." : r.merge_score ? `${(r.merge_score * 2).toFixed(1)} / 10` : "8.0 / 10",
+        findings: { crit: critCount || undefined, warn: warnCount || undefined, info: infoCount || undefined },
+        progress: r.progress,
+        cost_and_tokens: verdict === "In Progress" ? "Running..." : "$0.041 • 14.8k",
         completed_ago: "Recently",
       };
     });
@@ -227,7 +266,11 @@ export default function ReviewsPage() {
             <span>{refreshing ? "Syncing..." : "Sync PRs from GitHub"}</span>
           </button>
           <a
-            href="https://github.com/apps"
+            href={
+              publicConfig?.github_app_slug
+                ? `https://github.com/apps/${publicConfig.github_app_slug}/installations/new`
+                : "https://github.com/apps"
+            }
             target="_blank"
             rel="noopener noreferrer"
             className="h-9 px-4 rounded-md bg-[#238636] hover:bg-[#2ea043] text-white text-[12px] font-medium flex items-center gap-2 transition-colors shadow-sm"
@@ -565,23 +608,39 @@ export default function ReviewsPage() {
                     </span>
                   </td>
                   <td className="py-4 px-5 whitespace-nowrap">
-                    <div className="flex items-center gap-1.5 font-mono text-[10px]">
-                      {row.findings.crit ? (
-                        <span className="px-2 py-0.5 rounded bg-red-500/20 text-red-400 font-semibold border border-red-500/30">
-                          {row.findings.crit} crit
+                    {row.verdict === "In Progress" ? (
+                      <div className="flex items-center gap-2">
+                        <span className="material-symbols-outlined text-[14px] text-[#58a6ff] animate-spin">
+                          progress_activity
                         </span>
-                      ) : null}
-                      {row.findings.warn ? (
-                        <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 font-semibold border border-amber-500/30">
-                          {row.findings.warn} warn
+                        <span className="font-mono text-[11px] text-[#58a6ff] font-medium">
+                          Inspecting ({row.progress?.completed_agents ?? 0}/{row.progress?.total_agents ?? 6} agents done)
                         </span>
-                      ) : null}
-                      {row.findings.info ? (
-                        <span className="px-2 py-0.5 rounded bg-[#21262d] text-[#8b949e] border border-[#30363d]">
-                          {row.findings.info} info
-                        </span>
-                      ) : null}
-                    </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5 font-mono text-[10px]">
+                        {row.findings.crit ? (
+                          <span className="px-2 py-0.5 rounded bg-red-500/20 text-red-400 font-semibold border border-red-500/30">
+                            {row.findings.crit} crit
+                          </span>
+                        ) : null}
+                        {row.findings.warn ? (
+                          <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 font-semibold border border-amber-500/30">
+                            {row.findings.warn} warn
+                          </span>
+                        ) : null}
+                        {row.findings.info ? (
+                          <span className="px-2 py-0.5 rounded bg-[#21262d] text-[#8b949e] border border-[#30363d]">
+                            {row.findings.info} info
+                          </span>
+                        ) : null}
+                        {!row.findings.crit && !row.findings.warn && !row.findings.info ? (
+                          <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                            0 findings
+                          </span>
+                        ) : null}
+                      </div>
+                    )}
                   </td>
                   <td className="py-4 px-5 whitespace-nowrap font-mono text-[#8b949e] text-[11px]">
                     {row.cost_and_tokens}
@@ -616,5 +675,13 @@ export default function ReviewsPage() {
         </div>
       </section>
     </div>
+  );
+}
+
+export default function ReviewsPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-[#8b949e] font-mono text-xs">Loading review feed...</div>}>
+      <ReviewsPageContent />
+    </Suspense>
   );
 }

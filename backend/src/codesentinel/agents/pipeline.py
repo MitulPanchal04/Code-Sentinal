@@ -101,7 +101,20 @@ class ReviewState(TypedDict):
 # ─── LLM Factory ─────────────────────────────────────────────────────────────
 
 
-REASONING_MODELS = {"gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "o1", "o3", "o4-mini"}
+REASONING_MODELS = {
+    "gpt-6-astra",
+    "gpt-6",
+    "gpt-5.6",
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+    "gpt-5.6-luna",
+    "gpt-5.5",
+    "o1",
+    "o3",
+    "o3-mini",
+    "o4-mini",
+    "deepseek-reasoner",
+}
 
 
 def _is_reasoning_model(model: str) -> bool:
@@ -115,8 +128,16 @@ def create_llm(
     reasoning_effort: str | None = None,
     with_tools: bool = False,
 ) -> Any:
-    provider = provider or _settings.llm_provider
     model = model or _settings.llm_model
+
+    # Auto-detect provider from model name prefix if provider wasn't explicitly overridden
+    if not provider:
+        if model.startswith("claude"):
+            provider = "anthropic"
+        elif model.startswith("deepseek"):
+            provider = "litellm" if _settings.litellm_base_url else "openai"
+        else:
+            provider = _settings.llm_provider or "openai"
 
     if provider == "openai":
         kwargs: dict[str, Any] = {
@@ -141,8 +162,8 @@ def create_llm(
         return ChatOpenAI(
             model=model,
             temperature=temperature,
-            api_key=_settings.litellm_api_key,
-            base_url=_settings.litellm_base_url,
+            api_key=_settings.litellm_api_key or _settings.openai_api_key or "sk-dummy",
+            base_url=_settings.litellm_base_url or None,
         )
     else:
         raise ValueError(f"Unknown LLM provider: {provider}")
@@ -542,11 +563,19 @@ async def orchestration_node(state: ReviewState) -> dict:
 
     llm = create_llm(temperature=0)
     changed_files = set(f["file"] for f in deduped)
-    changed_lines = sum(
-        1
-        for line in state["diff"].split("\n")
-        if line.startswith("+") or line.startswith("-")
-    )
+    changed_lines = 0
+    try:
+        import unidiff
+        patch = unidiff.PatchSet(state["diff"])
+        changed_lines = sum(hunk.added + hunk.removed for f in patch for hunk in f)
+        if not changed_files and patch:
+            changed_files = set(f.path for f in patch)
+    except Exception:
+        changed_lines = sum(
+            1
+            for line in state["diff"].split("\n")
+            if (line.startswith("+") or line.startswith("-")) and not line.startswith(("+++", "---"))
+        )
 
     prompt = ORCHESTRATOR_PROMPT.format(
         findings_json=json.dumps(deduped[:20], indent=2),

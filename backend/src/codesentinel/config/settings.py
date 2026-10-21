@@ -18,6 +18,7 @@ class Settings(BaseSettings):
 
     # GitHub App
     github_app_id: str = ""
+    github_app_slug: str = "code-sentinel-app"
     github_webhook_secret: str = ""
     github_private_key: str = ""
     github_private_key_file: str = ""

@@ -1,23 +1,24 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
-import { useState } from "react";
+import { useState, Suspense } from "react";
 
-export function DashboardShell({ children }: { children: React.ReactNode }) {
+function DashboardShellContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const tab = searchParams.get("tab");
   const { data: session } = useSession();
   const [userDropdown, setUserDropdown] = useState(false);
 
   const navItems = [
     { label: "Dashboard", href: "/dashboard", icon: "dashboard", key: "dashboard" },
     { label: "Repositories", href: "/dashboard/repositories", icon: "folder_code", key: "repositories" },
-    { label: "Pull Requests", href: "/dashboard/reviews", icon: "merge", key: "pull-requests", badge: "142" },
-    { label: "Architectural Rules", href: "/dashboard/settings", icon: "schema", key: "architectural-rules" },
-    { label: "AI Review Squads", href: "/dashboard/analytics", icon: "smart_toy", key: "ai-review-squads" },
-    { label: "Audit Logs", href: "/dashboard/reviews", icon: "history_edu", key: "audit-logs" },
-    { label: "Organization Settings", href: "/dashboard/settings", icon: "settings", key: "organization-settings" },
+    { label: "Pull Requests", href: "/dashboard/reviews", icon: "merge", key: "pull-requests" },
+    { label: "Architectural Rules", href: "/dashboard/settings?tab=rules", icon: "schema", key: "architectural-rules" },
+    { label: "Inspection Intelligence", href: "/dashboard/analytics", icon: "smart_toy", key: "ai-review-squads" },
+    { label: "Organization Settings", href: "/dashboard/settings?tab=general", icon: "settings", key: "organization-settings" },
   ];
 
   const isCurrentActive = (item: typeof navItems[0]) => {
@@ -25,7 +26,8 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
     if (item.key === "repositories") return pathname === "/dashboard/repositories";
     if (item.key === "pull-requests") return pathname === "/dashboard/reviews" || pathname.startsWith("/dashboard/reviews/");
     if (item.key === "ai-review-squads") return pathname === "/dashboard/analytics";
-    if (item.key === "organization-settings" || item.key === "architectural-rules") return pathname === "/dashboard/settings";
+    if (item.key === "architectural-rules") return pathname === "/dashboard/settings" && tab === "rules";
+    if (item.key === "organization-settings") return pathname === "/dashboard/settings" && tab !== "rules";
     return false;
   };
 
@@ -64,17 +66,6 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
                     {item.icon}
                   </span>
                   <span>{item.label}</span>
-                  {item.badge && (
-                    <span
-                      className={`ml-auto text-[10px] font-mono px-1.5 py-0.2 rounded ${
-                        active
-                          ? "bg-[#30363d] text-[#c9d1d9]"
-                          : "bg-[#161b22] text-[#8b949e]"
-                      }`}
-                    >
-                      {item.badge}
-                    </span>
-                  )}
                 </Link>
               );
             })}
@@ -153,7 +144,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
                   </Link>
                   <button
                     onClick={() => signOut({ callbackUrl: "/signin" })}
-                    className="w-full text-left px-3 py-1.5 text-rose-400 hover:bg-rose-500/10"
+                    className="w-full text-left px-3 py-1.5 text-rose-400 hover:bg-rose-500/10 cursor-pointer"
                   >
                     Sign Out
                   </button>
@@ -171,5 +162,13 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         </main>
       </div>
     </div>
+  );
+}
+
+export function DashboardShell({ children }: { children: React.ReactNode }) {
+  return (
+    <Suspense fallback={<div className="bg-[#0d1117] min-h-screen" />}>
+      <DashboardShellContent>{children}</DashboardShellContent>
+    </Suspense>
   );
 }

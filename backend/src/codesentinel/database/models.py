@@ -108,6 +108,15 @@ class Review(Base):
     pr_number_commit_sha = Column(String(300), nullable=False)
     commit_sha = Column(String(40), nullable=False)
     status = Column(String(20), nullable=False, default="pending")
+    verdict = Column(String(30), nullable=True, default="in_progress")
+    progress = Column(
+        JSONB,
+        default=lambda: {
+            "completed_agents": 0,
+            "total_agents": 6,
+            "current_step": "queued",
+        },
+    )
     # Pull request metadata — populated by the install/sync path so that
     # PRs that were never reviewed still show up in the dashboard.
     pr_state = Column(String(20), nullable=True)

@@ -2,11 +2,12 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
-import { api, Review } from "@/lib/api";
+import { api, Review, PublicConfig } from "@/lib/api";
 import { formatDate } from "@/lib/utils";
 
 export default function DashboardPage() {
   const [reviews, setReviews] = useState<Review[]>([]);
+  const [publicConfig, setPublicConfig] = useState<PublicConfig | null>(null);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -17,9 +18,18 @@ export default function DashboardPage() {
     setLoading(true);
     setError(null);
     try {
-      const data = await api.listReviews({ limit: 25 });
-      setReviews(data.reviews || []);
-      setTotal(data.total || 0);
+      const [reviewData, configData] = await Promise.allSettled([
+        api.listReviews({ limit: 25 }),
+        api.getPublicConfig(),
+      ]);
+
+      if (reviewData.status === "fulfilled") {
+        setReviews(reviewData.value.reviews || []);
+        setTotal(reviewData.value.total || 0);
+      }
+      if (configData.status === "fulfilled") {
+        setPublicConfig(configData.value);
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       setError(`Failed to connect to backend: ${msg}`);
@@ -31,6 +41,20 @@ export default function DashboardPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Reactive auto-polling while any review is actively in-progress
+  useEffect(() => {
+    const hasActive = reviews.some(
+      (r) => r.status === "in_progress" || r.status === "pending" || r.verdict === "in_progress"
+    );
+    if (!hasActive) return;
+
+    const timer = setTimeout(() => {
+      fetchData();
+    }, 2500);
+
+    return () => clearTimeout(timer);
+  }, [reviews, fetchData]);
 
   // Export report
   const handleExport = () => {
@@ -103,13 +127,19 @@ export default function DashboardPage() {
             <span className="material-symbols-outlined text-[15px] text-[#8b949e]">download</span>
             Export Report
           </button>
-          <Link
-            href="/dashboard/reviews"
+          <a
+            href={
+              publicConfig?.github_app_slug
+                ? `https://github.com/apps/${publicConfig.github_app_slug}/installations/new`
+                : "/dashboard/reviews"
+            }
+            target={publicConfig?.github_app_slug ? "_blank" : undefined}
+            rel={publicConfig?.github_app_slug ? "noopener noreferrer" : undefined}
             className="inline-flex items-center gap-2 px-4 py-2 bg-[#f0f6fc] hover:bg-[#ffffff] text-[#0d1117] rounded-md text-xs font-semibold tracking-tight transition-all shadow-xs active:scale-95"
           >
             <span className="material-symbols-outlined text-[16px]">add</span>
             Trigger Manual Review
-          </Link>
+          </a>
         </div>
       </header>
 
@@ -493,11 +523,23 @@ export default function DashboardPage() {
             <tbody className="divide-y divide-[#30363d]/60 font-sans">
               {reviews.length > 0 ? (
                 filteredReviews.map((review) => {
-                  const isCompleted = review.status === "complete";
-                  const isFailed = review.status === "failed";
-                  const score = review.merge_score !== null ? review.merge_score : 8.5;
-                  const isHigh = score >= 4;
-                  const isMed = score === 3;
+                  let verdict: "Merge Ready" | "In Progress" | "Blocked" | "Changes Req";
+                  if (review.verdict === "merge_ready") {
+                    verdict = "Merge Ready";
+                  } else if (review.verdict === "in_progress") {
+                    verdict = "In Progress";
+                  } else if (review.verdict === "blocked") {
+                    verdict = "Blocked";
+                  } else if (review.verdict === "changes_requested") {
+                    verdict = "Changes Req";
+                  } else {
+                    const isBlocked = review.status === "failed" || (review.merge_score !== null && review.merge_score < 3);
+                    const isMergeReady = (review.merge_score !== null && review.merge_score >= 4) && review.status === "complete";
+                    const isInProg = review.status === "in_progress" || review.status === "pending";
+                    verdict = isBlocked ? "Blocked" : isMergeReady ? "Merge Ready" : isInProg ? "In Progress" : "Changes Req";
+                  }
+
+                  const score = review.merge_score !== null ? (review.merge_score * 2).toFixed(1) : "8.5";
                   const findings = review.findings || [];
                   const criticals = findings.filter((f) => f.severity === "critical").length;
                   const warnings = findings.filter((f) => f.severity === "warning").length;
@@ -505,20 +547,25 @@ export default function DashboardPage() {
                   return (
                     <tr key={review.id} className="hover:bg-[#21262d]/40 transition-colors">
                       <td className="py-3 px-4 whitespace-nowrap">
-                        {isCompleted ? (
-                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-mono font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                        {verdict === "Merge Ready" ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-medium text-[11px] font-mono">
                             <span className="material-symbols-outlined text-[13px]">check_circle</span>
-                            Completed
+                            Merge Ready
                           </span>
-                        ) : isFailed ? (
-                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-mono font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20">
-                            <span className="material-symbols-outlined text-[13px]">dangerous</span>
-                            Blocker Detected
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-mono font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                        ) : verdict === "In Progress" ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/30 font-medium text-[11px] font-mono">
                             <span className="material-symbols-outlined text-[13px] animate-spin">progress_activity</span>
                             In Progress
+                          </span>
+                        ) : verdict === "Blocked" ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/30 font-medium text-[11px] font-mono">
+                            <span className="material-symbols-outlined text-[13px]">block</span>
+                            Blocked
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30 font-medium text-[11px] font-mono">
+                            <span className="material-symbols-outlined text-[13px]">warning</span>
+                            Changes Req
                           </span>
                         )}
                       </td>
@@ -545,17 +592,31 @@ export default function DashboardPage() {
                         </div>
                       </td>
                       <td className="py-3 px-4 whitespace-nowrap">
-                        <span className={`font-mono font-semibold px-2 py-0.5 rounded text-[11px] border ${
-                          isHigh ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : isMed ? "bg-amber-500/10 text-amber-400 border-amber-500/20" : "bg-rose-500/10 text-rose-400 border-rose-500/20"
-                        }`}>
-                          {score} / 10
-                        </span>
+                        {verdict === "In Progress" ? (
+                          <span className="font-mono text-[11px] text-[#8b949e] px-2 py-0.5 rounded bg-[#21262d] border border-[#30363d] animate-pulse">Evaluating...</span>
+                        ) : (
+                          <span className={`font-mono font-semibold px-2 py-0.5 rounded text-[11px] border ${
+                            Number(score) >= 7 ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : Number(score) >= 5 ? "bg-amber-500/10 text-amber-400 border-amber-500/20" : "bg-rose-500/10 text-rose-400 border-rose-500/20"
+                          }`}>
+                            {score} / 10
+                          </span>
+                        )}
                       </td>
                       <td className="py-3 px-4 whitespace-nowrap">
-                        <div className="flex items-center gap-1.5 font-mono text-[10px]">
-                          <span className="px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20 font-medium">{criticals} Crit</span>
-                          <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-medium">{warnings} Warn</span>
-                        </div>
+                        {verdict === "In Progress" ? (
+                          <span className="font-mono text-[11px] text-[#58a6ff] flex items-center gap-1.5">
+                            <span className="material-symbols-outlined text-[13px] animate-spin">progress_activity</span>
+                            Inspecting ({review.progress?.completed_agents ?? 0}/{review.progress?.total_agents ?? 6} agents done)
+                          </span>
+                        ) : (
+                          <div className="flex items-center gap-1.5 font-mono text-[10px]">
+                            {criticals > 0 && <span className="px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20 font-medium">{criticals} Crit</span>}
+                            {warnings > 0 && <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-medium">{warnings} Warn</span>}
+                            {criticals === 0 && warnings === 0 && (
+                              <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">0 findings</span>
+                            )}
+                          </div>
+                        )}
                       </td>
                       <td className="py-3 px-4 font-mono text-[11px] text-[#8b949e] whitespace-nowrap">
                         {formatDate(review.created_at)}
